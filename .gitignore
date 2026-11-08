@@ -1,0 +1,7 @@
+result
+result-*
+
+# Local paths to each Pi's SSH public key, read by the justfile.
+.env
+# Real network values and notes for this machine, which public files leave out.
+private/

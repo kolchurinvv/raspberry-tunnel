@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Pre-commit hook — delegates to the project's gate so the task runner stays the
+# single source of truth for "what passes." Install by pointing git at the
+# hooks dir (one-time per clone):
+#
+#     git config core.hooksPath .githooks
+#
+# (wrap that in a `hook-install` recipe). Bypass a single commit with
+# `git commit --no-verify`, or scripted commits with SKIP_HOOK=1.
+
+set -e
+
+# Nothing staged (e.g. `git commit --amend` of an empty change): no-op.
+if git diff --cached --quiet; then
+  exit 0
+fi
+
+# Escape hatch for tooling that can't pass git's --no-verify through.
+if [[ "${SKIP_HOOK:-}" == "1" ]]; then
+  echo "→ pre-commit: skipped (SKIP_HOOK=1)"
+  exit 0
+fi
+
+# --- Bind this to your task runner ----------------------------------------
+# Replace the command below with the project's gate. Keep the hook a thin
+# delegator — do not inline check logic here.
+RUNNER="just"          # or: make / npm run / ./scripts
+GATE="precommit"       # the strict aggregate (check + E2E + snapshot diff)
+
+if ! command -v "${RUNNER%% *}" >/dev/null 2>&1; then
+  echo "pre-commit: '${RUNNER%% *}' not on PATH — enter the dev shell first." >&2
+  exit 1
+fi
+
+exec $RUNNER $GATE

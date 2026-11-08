@@ -1,0 +1,2 @@
+# Placeholder: Pi builds refuse it. Give each build its Pi's own key from outside
+# the repository with --override-input admin-key path:/absolute/path/to/key.pub

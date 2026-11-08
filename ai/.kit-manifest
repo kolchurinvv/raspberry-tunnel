@@ -1,0 +1,32 @@
+# ord-ai-n agent kit, vendored by ai/sync.sh. Do not edit the files listed here:
+# change them in ord-ai-n and re-run its installer (ai/INSTALL.md). Verify: ai/sync.sh --check .
+# source: github.com/kolchurinvv/ordain@08718d0253b9d0308ebbb6b6690fb1e411870b03
+9260e2f3a5bae84285e27838f46f25723094d5c187cbbf991226507b6d0d9e27  ai/00-execution-policy.md
+a1f3e99d35ab1ff9ea233ead4a73327765035d4c86bf16a3c0cb0ca9b210522f  ai/01-commit-and-pr-hygiene.md
+aae9c01c7c4907aa7630ff509945dafb769843ef8f8d9010b8d4a71eccda6dc1  ai/02-ci-discipline.md
+e7214df66ebb36bb9a4fca57c347151419639a4fe57323ebb2ba4defa3e8843f  ai/03-defensive-coding.md
+f2e48d87d90eb60c87756ee09e4bb8e025d3b6d3498a8280f264cd4c27e63ae5  ai/04-memory-framework.md
+aab5b7ba19566fde050c3f0f6dca9f4537f97fbd6c20c759b40e2df52bf30e59  ai/05-agent-authoring.md
+0fbc44b75f9cb5f78a59003c5ef5d29e1d8389b69d9c3789117a050decfb76ff  ai/06-knowledge-placement.md
+f2a10d60b5e179491f6f11fc784eff2973747b6d629a571e7aa7e376d6c1c17e  ai/07-agent-roster.md
+a8e2a836db9530f589a8f2fda8f77d41ca538f5dd403aafe386e2bb4a7462678  ai/08-adversarial-review.md
+9364b557b65b2ab57979bdc897e6007dffe1ca6421d1a667e33372f62be9ecb0  ai/09-parallel-streams.md
+005a235de5e8a7e8dc85b1b8615ccb2dcfaefd8f87e0d941a10e368e685638d9  ai/10-test-discipline.md
+80869f0e7cd5050fd1cd8497af505bf185fa2f869820844054e43825c6cc0924  ai/11-quality-ratchets.md
+5735b5cd70f96e70d36f5bef05d48407c4bd672a6d6b06a92a20d37fb483f211  ai/12-static-strictness.md
+4b367a996a439a6650bce7584456edad43477a50e3ed52a6e9b8d10e7dcea10c  ai/CORE.md
+d40706db08721ed4503afac062202416326d7061d58bee9e159971cc616fefd0  ai/INSTALL.md
+bf1cdfaba8d61567d047bade4282566101cdadd9d1bac49c986b00ba95ddee7c  ai/README.md
+cf2620ca224dc4aca2db6b927d1126731a55304b12f03bea3c500a5e5e3e863f  ai/agents/adversary.md
+1be4c981a082aef783a069427587a7d9edbcbdb78bb8b052b47463c22e01fdbd  ai/agents/coding-teacher.md
+a601da267b15782298dae0dc1097284593685192183aa80103cffb3adad4e160  ai/agents/explorer.md
+211b4a0937381ccf067b4d4b9f237daa010b041fce9a76ea5c1db1d4b868ec43  ai/agents/planner.md
+58aa5ddd80213d154d8df364fd049cabfc8e5f42355afb055e662d24fcf147bf  ai/agents/reviewer.md
+73cc8415c04ac78b3f7a1bdc70bc6f26b1f200b6e456de208aa88ef5b949c884  ai/agents/star-pupil.md
+abe27fc5d20915c002dad0d05152b9cdad254fda1e583974d8b219b09aa85b35  ai/providers.md
+7ac8c003af606fbadef8c0c143d435c72cc5db7daa8ddc0c3d7b063fdc1c4139  ai/sync.sh
+e058e528484ad94c43873c5fa9792a62d1bb51a4d2d9a9e91250932ac8c5f8b6  ai/templates/agent-template.md
+84f36fcf6c57c8ff0580313243ec3f4508e9fafd39bd8a1b23c68c536ba1a661  ai/templates/claude.settings.json
+789a5ee66529c3dcf6ffb0f17457e74bf5fb271f8115eeb5de0f34dd790a4c2b  ai/templates/decision-record.md
+b9870c11d0e03e2d76109892556107309327f0c3ec69e2a20f7289c40e1fa4db  ai/templates/gate.just
+739cdca8de995f935d87aea5f051774ac5a5b706b7d81fe9567bc94d862756c0  ai/templates/pre-commit

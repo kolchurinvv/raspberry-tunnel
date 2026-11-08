@@ -1,0 +1,21 @@
+{
+  "tagOwners": {
+    "tag:exit": ["tunnel@"],
+    "tag:gateway": ["tunnel@"]
+  },
+  "autoApprovers": {
+    "exitNode": ["tag:exit"]
+  },
+  "grants": [
+    {
+      "src": ["tag:gateway"],
+      "dst": ["autogroup:internet"],
+      "ip": ["*"]
+    },
+    {
+      "src": ["tunnel@"],
+      "dst": ["tag:exit", "tag:gateway"],
+      "ip": ["tcp:22"]
+    }
+  ]
+}

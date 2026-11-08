@@ -1,0 +1,53 @@
+{
+  "nodes": {
+    "admin-key": {
+      "flake": false,
+      "locked": {
+        "path": "./keys/admin.pub",
+        "type": "path"
+      },
+      "original": {
+        "path": "./keys/admin.pub",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "extra-local-nets": {
+      "flake": false,
+      "locked": {
+        "path": "./modules/extra-local-nets.placeholder.nix",
+        "type": "path"
+      },
+      "original": {
+        "path": "./modules/extra-local-nets.placeholder.nix",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1793341285,
+        "narHash": "sha256-Y1CiZ4SoBUjLQyQM/pY+rS2dXD3CHLPstF0lmOc73D4=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "1c89083e451e891152365b799595cf7790a43325",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "admin-key": "admin-key",
+        "extra-local-nets": "extra-local-nets",
+        "nixpkgs": "nixpkgs"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "Yolo-but-guarded permission profile. Autonomy is granted HERE and is conditional on the execution policy (ai/00-execution-policy.md). The deny list is the load-bearing part: it protects generated baselines and forbids writes outside this repo. Replace <...> placeholders. Pre-approving recurring read-only commands (the gate, ci-watch) avoids an approval round-trip each run.",
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Edit(**)",
+      "Write(**)",
+      "Bash(<gate-runner> *)",
+      "Bash(<ci-watch-recipe> *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(gh run *)",
+      "Bash(gh pr *)",
+      "WebSearch"
+    ],
+    "deny": [
+      "Bash(rm * golden*)",
+      "Bash(rm * *.snap)",
+      "Bash(rm * __snapshots__/**)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Write(<sibling-repo-path>/**)",
+      "Edit(<sibling-repo-path>/**)"
+    ]
+  }
+}
