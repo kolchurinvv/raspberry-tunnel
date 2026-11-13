@@ -1,4 +1,4 @@
-# Copper apartment: TV B plugs in here. Pi B bridges it onto this apartment's
+# Apartment B: TV B plugs in here. Pi B bridges it onto this apartment's
 # network, so phones here can find it and cast to it, but sends its internet
 # traffic through Pi A. If the tunnel stops working the TV moves to this
 # apartment's connection until it's back, so it stays online but shows this
@@ -197,8 +197,8 @@ in
     }
   ]
   # Every other private network, whichever way the TV's traffic would go. On
-  # fallback this apartment's router may reach some, such as the fiber apartment's
-  # secure VLAN while Pi B is on trial there.
+  # fallback this apartment's router may reach some, such as apartment A's secure
+  # VLAN while Pi B is on trial there.
   ++ map (net: {
     IncomingInterface = cfg.tv;
     To = net;

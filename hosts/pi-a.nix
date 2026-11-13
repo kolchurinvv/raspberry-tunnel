@@ -1,4 +1,4 @@
-# Fiber apartment: the exit node. TV B's traffic reaches the internet from here.
+# Apartment A: the exit node. TV B's traffic reaches the internet from here.
 { config, lib, ... }:
 
 let

@@ -24,7 +24,7 @@ The options considered:
 - YouTube's "Link with TV code", which pairs through YouTube's servers. No change
   needed, but it covers YouTube only.
 - Discovery relays on Pi B, plus a static route to `10.77.0.0/24` on each
-  apartment's router. It depends on the copper combo unit supporting static
+  apartment's router. It depends on apartment B's combo unit supporting static
   routes, and the route sends traffic back out the router's LAN port, so the two
   directions take different paths, which router firewalls can drop.
 - Discovery relays plus proxy ARP, with the TV on an address reserved on each
@@ -77,7 +77,7 @@ policy is `manual`, so nothing else brings it up.
   the tailnet and Pi B itself.
 - Pi B needs no per-apartment settings: it learns the network from DHCP.
 - Phones on another network or VLAN than Pi B's uplink won't find the TV. During
-  the trial in the fiber apartment, the TV's network is the default VLAN.
+  the trial in apartment A, the TV's network is the default VLAN.
 - Anything plugged into the TV's port is treated as the TV, and a cable from it
   back to the apartment's network would loop the network, as STP is off.
 - Pi B's address comes from `br0`'s MAC address, not the built-in port's.
@@ -111,10 +111,10 @@ policy is `manual`, so nothing else brings it up.
 - its DNS;
 - discovery and connections both ways with a phone;
 - ARP resolution of the TV from Pi B, the router and the phone;
-- what the TV can't reach on both paths, including private networks that the
-  copper router can reach;
+- what the TV can't reach on both paths, including private networks that
+  apartment B's router can reach;
 - the TV's port going down while nftables is stopped, and coming back up after
   the adapter is replugged;
 - the final subtest, which shows the port going down once `tv-port` is deleted,
-  and the TV leaking to the copper connection if the port is forced up without
-  it.
+  and the TV leaking to apartment B's connection if the port is forced up
+  without it.
