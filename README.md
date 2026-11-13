@@ -37,6 +37,7 @@ between them, but traffic never exits there.
 | SD card images | Both built and flashed |
 | Public health dashboard (`docs/decisions/D2-public-dashboard-pulls-from-the-pis.md`) | Designed. Not built yet: next come the Pis' status endpoint, then the dashboard, one Go binary (`docs/decisions/D3-dashboard-is-one-go-binary.md`) deployed on the user's cluster |
 | Dashboard program (`dashboard/`, D3) | Built: one Go binary, with its image (`.#dashboard-image`, amd64) and a check that runs its Go tests (`.#checks.x86_64-linux.dashboard`). The tests pass, including those that no address or private name reaches the page and that every route is `/` or under `/_dash/`. Dev mode runs it with fake Pis (`dashboard/README.md`). Not yet run against the real Headscale, the Pis' endpoint or the cluster, and not deployed |
+| Pis' status endpoint for the dashboard (`modules/status.nix`, D2) | Written: each Pi serves its status on the tailnet (see [Status endpoint](#status-endpoint)), and the Headscale policy lets the dashboard and your own devices read it. It evaluates, but hasn't run in the VM test or on the Pis yet, and neither have the changes it makes to both Pis' configs and the policy |
 | Waking the workstation from the phone through Pi A | Not started, secondary to the tunnel |
 
 ## Testing
@@ -160,10 +161,13 @@ D2's contract defines every field. In short:
   has no battery-backed clock.
 - `tunnel` lists the other ends of the tunnel: Pi A on Pi B, and every gateway on
   Pi A. Each one's `path` is `direct`, `peer_relay`, `derp` (with the DERP region in
-  `relay`), `idle` or `offline`.
-- `public_ip` is where the Pi's own traffic last left from, which every Pi checks
-  every 5 minutes through `tunnel.publicIpUrl`. Pi B's should be Pi A's. It's
-  apartment A's real address, so keep the output out of anything public.
+  `relay`), `idle` or `offline`. It's `null` while tailscaled isn't running and
+  logged in, as after `tailscale down` or a key expiring.
+- `public_ip` is where the Pi's own traffic last left from. Every 5 minutes each
+  Pi asks a site which address it sees: `ipv4.icanhazip.com` by default, which the
+  `tunnel.publicIpUrl` setting can replace. That site sees both Pis' public
+  addresses. Pi B's should be Pi A's. It's apartment A's real address, so keep
+  the output out of anything public.
 
 To start using it: load `headscale/policy.json` on the Headscale server, then
 install each Pi's new config (`just update-nix-on a`, then `just reboot-pi a`, and
