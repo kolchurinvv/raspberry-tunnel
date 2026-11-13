@@ -164,10 +164,11 @@ D2's contract defines every field. In short:
   `relay`), `idle` or `offline`. It's `null` while tailscaled isn't running and
   logged in, as after `tailscale down` or a key expiring.
 - `public_ip` is where the Pi's own traffic last left from. Every 5 minutes each
-  Pi asks a site which address it sees: `ipv4.icanhazip.com` by default, which the
-  `tunnel.publicIpUrl` setting can replace. That site sees both Pis' public
-  addresses. Pi B's should be Pi A's. It's apartment A's real address, so keep
-  the output out of anything public.
+  Pi asks a site which address it sees: `ipv4.icanhazip.com` (Cloudflare) first,
+  then `checkip.amazonaws.com` (Amazon) if that fails. Both see the Pis' public
+  addresses: the first at every check, the second whenever the first fails. The
+  list is the `tunnel.publicIpUrls` setting. Pi B's should be Pi A's. It's
+  apartment A's real address, so keep the output out of anything public.
 
 To start using it: load `headscale/policy.json` on the Headscale server, then
 install each Pi's new config (`just update-nix-on a`, then `just reboot-pi a`, and
