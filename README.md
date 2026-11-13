@@ -30,14 +30,14 @@ between them, but traffic never exits there.
 
 | Piece | State |
 |---|---|
-| Pi A config (`hosts/pi-a.nix`, `modules/`) | Passes the VM test. Runs on a real Pi, has joined Headscale, and serves as Pi B's exit node |
-| Pi B config (`hosts/pi-b.nix`, `modules/`) | Passes the VM test. Runs on a real Pi in apartment B, with TV B bridged onto the combo unit's network through its USB adapter. TV B's traffic goes through the tunnel, which reached Pi A over a direct path rather than a relay, and websites see apartment A's address. Apartment B's network hands out IPv6, and TV B gets none. Casting from a phone on apartment B's Wi-Fi works. Before moving, it was tried in apartment A on the default VLAN, where streaming, casting from an app and screen mirroring all worked, on Pi B's own connection and through the tunnel |
+| Pi A config (`hosts/pi-a.nix`, `modules/`) | Passes the VM test. Runs on a real Pi, has joined Headscale, and serves as Pi B's exit node. Updated on 2026-11-13: it serves the status endpoint, and its firewall also blocks the ranges in `private/extra-local-nets.nix` |
+| Pi B config (`hosts/pi-b.nix`, `modules/`) | Passes the VM test. Runs on a real Pi in apartment B, with TV B bridged onto the combo unit's network through its USB adapter. TV B's traffic goes through the tunnel, which reached Pi A over a direct path rather than a relay, and websites see apartment A's address. Apartment B's network hands out IPv6, and TV B gets none. Casting from a phone on apartment B's Wi-Fi works. Before moving, it was tried in apartment A on the default VLAN, where streaming, casting from an app and screen mirroring all worked, on Pi B's own connection and through the tunnel. Updated on 2026-11-13: it serves the status endpoint, and its firewall also blocks the ranges in `private/extra-local-nets.nix`. Its exit check sees the same public address as Pi A's |
 | Headscale policy (`headscale/policy.json`) | Passes the VM test |
 | Headscale server | Runs as a second Headscale on an existing server, set up by hand. Its config isn't in this repository |
 | SD card images | Both built and flashed |
-| Public health dashboard (`docs/decisions/D2-public-dashboard-pulls-from-the-pis.md`) | Designed. Not built yet: next come the Pis' status endpoint, then the dashboard, one Go binary (`docs/decisions/D3-dashboard-is-one-go-binary.md`) deployed on the user's cluster |
+| Public health dashboard (`docs/decisions/D2-public-dashboard-pulls-from-the-pis.md`) | Designed, and both its parts are built: the dashboard program, one Go binary (`docs/decisions/D3-dashboard-is-one-go-binary.md`) for the user's cluster, and the Pis' status endpoint, which runs on both Pis. The next two rows give each one's state |
 | Dashboard program (`dashboard/`, D3) | Built: one Go binary, with its image (`.#dashboard-image`, amd64) and a check that runs its Go tests (`.#checks.x86_64-linux.dashboard`). The tests pass, including those that no address or private name reaches the page and that every route is `/` or under `/_dash/`. Dev mode runs it with fake Pis (`dashboard/README.md`). Not yet run against the real Headscale, the Pis' endpoint or the cluster, and not deployed |
-| Pis' status endpoint for the dashboard (`modules/status.nix`, D2) | Written: each Pi serves its status on the tailnet (see [Status endpoint](#status-endpoint)), and the Headscale policy lets the dashboard and your own devices read it. It evaluates, but hasn't run in the VM test or on the Pis yet, and neither have the changes it makes to both Pis' configs and the policy |
+| Pis' status endpoint for the dashboard (`modules/status.nix`, D2) | Passes the VM test, which also logs what a request costs. Runs on both Pis since they were updated on 2026-11-13: each serves its status on the tailnet (see [Status endpoint](#status-endpoint)), and the Headscale policy lets the dashboard and your own devices read it |
 | Waking the workstation from the phone through Pi A | Not started, secondary to the tunnel |
 
 ## Testing
@@ -67,7 +67,8 @@ machine, run it under the box's lock, as `private/gate.md` describes for the VM 
 All the steps below have been run on real hardware. Pi B was set up in
 apartment A, running steps 1 to 5 before it bridged its TV port, then moved to
 apartment B, where step 9 passed. Passing
-`private/extra-local-nets.nix` to a build is newer, and has only been evaluated.
+`private/extra-local-nets.nix` to a build is newer: both Pis were updated to builds
+made with it on 2026-11-13, rather than set up from scratch with it.
 
 1. Give each Pi an SSH key pair of its own, and keep the keys outside this repository,
    which may become public. Every Pi build takes its Pi's public key on the command
@@ -144,7 +145,8 @@ systemd starts one short-lived, unprivileged script per connection, which reads
 sends one disco ping to the exit node. The VM test logs what a request costs.
 
 From one of your own devices on the tailnet, with the Pi's tailnet address, which
-`tailscale ip -4` prints on the Pi:
+`tailscale status` lists on that device, and `headscale nodes list` on the
+Headscale server:
 
 ```sh
 curl -s http://<pi-tailnet-address>:9190/status | jq .
@@ -181,10 +183,19 @@ the same for `b`). The dashboard joins with a key from
   builds the new system on the workstation, copies it to the Pi over SSH and installs
   it for the Pi's next boot. `just reboot-pi a` then reboots into it. `just
   switch-nix-on a` switches to it at once instead. For Pi B, the recipes jump
-  through Pi A by themselves (see below). To switch without just:
+  through Pi A by themselves (see below). The recipes read `.env` and
+  `private/`, which git ignores, so run them from the folder that holds both:
+  `main/`, in a checkout with a folder per branch. To switch Pi A without just:
   ```sh
   NIX_SSHOPTS="-i <key>" nixos-rebuild switch --flake '.#pi-a' --target-host root@<ip> \
     --no-reexec --override-input admin-key path:/absolute/path/to/pi-a.pub \
+    --override-input extra-local-nets path:$PWD/private/extra-local-nets.nix
+  ```
+  Pi B is reached only through Pi A, with `rt-pi-a` and `rt-pi-b` in
+  `~/.ssh/config` (see below):
+  ```sh
+  NIX_SSHOPTS="-J rt-pi-a" nixos-rebuild switch --flake '.#pi-b' --target-host rt-pi-b \
+    --no-reexec --override-input admin-key path:/absolute/path/to/pi-b.pub \
     --override-input extra-local-nets path:$PWD/private/extra-local-nets.nix
   ```
   If a change moves the Pi's own address, `switch` loses the SSH connection halfway
@@ -197,14 +208,23 @@ the same for `b`). The dashboard joins with a key from
   apartment A's default VLAN, or over the tailnet. Its replies to anywhere else go
   into the tunnel, and Pi A drops those bound for private ranges. Once Pi B is in
   apartment B, the tailnet is the only way in from apartment A. The Headscale
-  policy lets Pi A reach Pi B's SSH over it, and nothing else. In `~/.ssh/config`,
-  give `rt-pi-b` Pi B's tailnet address (`tailscale ip -4` on Pi B). The justfile's
-  recipes for Pi B then jump through `rt-pi-a` themselves, with your key staying on
-  the workstation. For a plain `ssh rt-pi-b`, add `ProxyJump rt-pi-a` to that
-  entry too, or use `ssh -J rt-pi-a rt-pi-b`.
+  policy lets Pi A reach Pi B's SSH over it, and nothing else, so load
+  `headscale/policy.json` on the Headscale server first: until the server has
+  that grant, Pi A can't reach Pi B. In `~/.ssh/config`, give `rt-pi-b` Pi B's
+  tailnet address. Pi B can't tell you that yet, as you can't reach it, so take
+  it from `headscale nodes list` on the Headscale server, or `tailscale status` on
+  Pi A. The justfile's recipes for Pi B then jump through `rt-pi-a` themselves,
+  with your key staying on the workstation. For a plain `ssh rt-pi-b`, add
+  `ProxyJump rt-pi-a` to that entry too, or use `ssh -J rt-pi-a rt-pi-b`. The first
+  connection asks you to trust Pi B's host key under its new address. Its
+  fingerprint should match the one you accepted for Pi B's address on the
+  apartment's network, which `ssh-keygen -lF <that address>` prints. If it
+  doesn't, don't connect.
 - **Heat and power:** the config sets up no fan control for the PoE HAT. With all four
   cores busy for 5 minutes, Pi A settled at about 65 °C with no undervoltage warnings.
-  It hasn't been measured carrying tunnel traffic.
+  It hasn't been measured carrying tunnel traffic. In its enclosure next to a network
+  switch, Pi A idles at about 61 °C (2026-11-13), and Pi B at about 55 °C. The
+  dashboard warns from 70 °C (D4).
 - **The clock:** a Pi has no battery-backed clock, so it can start with the wrong date
   until it reaches the network. Pi A's first boot logged 17 March, and a reboot had the
   right time within a minute. Log entries from early in a boot can show the wrong date.
