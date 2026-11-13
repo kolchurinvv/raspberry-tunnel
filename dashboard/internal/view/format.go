@@ -16,7 +16,7 @@ type Names struct {
 	Name, TV, Apt string
 }
 
-var piHost = regexp.MustCompile(`^pi-([a-z])$`)
+var piHost = regexp.MustCompile(`^pi[-_]([a-z])$`)
 
 // NamesOf derives the names from a Pi's host name, which is the one name of
 // it the page may show.

@@ -42,7 +42,8 @@ const (
 
 // Status is one answer from GET /status.
 type Status struct {
-	Schema             int
+	Schema int
+	// Host is "" when the Pi sent null or something that isn't a host name.
 	Host               string
 	Role               Role
 	Time               *time.Time
@@ -89,6 +90,7 @@ type Counters struct {
 
 // Tunnel is one peer in the Pi's tunnel list.
 type Tunnel struct {
+	// Peer is nil when the Pi sent null or something that isn't a host name.
 	Peer      *string
 	Online    *bool
 	Path      *Path
@@ -137,7 +139,9 @@ func (e *FieldError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Path, e.Msg)
 }
 
-var hostname = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
+// Hostname is the character set NixOS allows in networking.hostName: a DNS
+// label, with underscores too.
+var Hostname = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?$`)
 
 // Parse reads one 200 answer from GET /status.
 func Parse(body []byte) (*Status, error) {
@@ -154,13 +158,10 @@ func Parse(body []byte) (*Status, error) {
 	}
 
 	s := &Status{Schema: Version}
-	if h := d.str("host", d.field(top, "$", "host")); h != nil {
-		if !hostname.MatchString(*h) {
-			d.fail("host", "is not a hostname")
-		}
+	// A name that isn't a host name, or null, is kept as unknown rather than
+	// costing the whole answer: the page names Pis by their tailnet names.
+	if h := d.str("host", d.field(top, "$", "host")); h != nil && Hostname.MatchString(*h) {
 		s.Host = *h
-	} else if d.err == nil {
-		d.fail("host", "is null")
 	}
 	if r := d.str("role", d.field(top, "$", "role")); r != nil {
 		switch Role(*r) {
@@ -338,8 +339,8 @@ func parseTunnels(d *decoder, raw json.RawMessage) []Tunnel {
 			TxBytes:   d.uint(p+".tx_bytes", d.field(m, p, "tx_bytes")),
 			LatencyMS: d.num(p+".latency_ms", d.field(m, p, "latency_ms")),
 		}
-		if t.Peer != nil && !hostname.MatchString(*t.Peer) {
-			d.fail(p+".peer", "is not a hostname")
+		if t.Peer != nil && !Hostname.MatchString(*t.Peer) {
+			t.Peer = nil
 		}
 		if ps := d.str(p+".path", d.field(m, p, "path")); ps != nil {
 			switch Path(*ps) {

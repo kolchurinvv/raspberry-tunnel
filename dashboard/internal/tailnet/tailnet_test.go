@@ -85,8 +85,10 @@ func TestSelect(t *testing.T) {
 		peerSpec{host: "pi-b", tags: []string{TagGateway}, ip: "100.64.0.8", online: true, created: now, id: 8},
 		peerSpec{host: "someones-phone", ip: "100.64.0.4", online: true, id: 4},
 		peerSpec{host: "bad name", tags: []string{TagGateway}, ip: "100.64.0.6", online: true, id: 6},
+		// NixOS allows underscores.
+		peerSpec{host: "pi_e", tags: []string{TagGateway}, ip: "100.64.0.7", online: true, id: 7},
 	)
-	want := []string{"exit:pi-a@100.64.0.1", "gateway:pi-b@100.64.0.8", "gateway:pi-c@100.64.0.3"}
+	want := []string{"exit:pi-a@100.64.0.1", "gateway:pi-b@100.64.0.8", "gateway:pi-c@100.64.0.3", "gateway:pi_e@100.64.0.7"}
 	// Map order is random; the choice must not be.
 	for i := 0; i < 50; i++ {
 		got, notes := Select(st)

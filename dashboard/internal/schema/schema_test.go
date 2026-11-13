@@ -179,8 +179,6 @@ func TestParseRejects(t *testing.T) {
 		{"missing top field", func(m map[string]any) { delete(m, "temp_c") }, "temp_c"},
 		{"missing nested field", func(m map[string]any) { delete(m["mem"].(map[string]any), "available_kb") }, "mem.available_kb"},
 		{"missing tunnel field", func(m map[string]any) { delete(m["tunnel"].([]any)[0].(map[string]any), "path") }, "tunnel[0].path"},
-		{"host null", func(m map[string]any) { m["host"] = nil }, "host"},
-		{"host not a hostname", func(m map[string]any) { m["host"] = "pi b; <x>" }, "host"},
 		{"unknown role", func(m map[string]any) { m["role"] = "router" }, "role"},
 		{"unknown path", func(m map[string]any) { m["tunnel"].([]any)[0].(map[string]any)["path"] = "teleport" }, "tunnel[0].path"},
 		{"negative counter", func(m map[string]any) { m["tunnel"].([]any)[0].(map[string]any)["rx_bytes"] = -5 }, "tunnel[0].rx_bytes"},
@@ -239,5 +237,35 @@ func TestParseErrorBody(t *testing.T) {
 	}
 	if _, err := ParseError([]byte(`{"schema": 1}`)); err == nil {
 		t.Error("ParseError accepted a missing error")
+	}
+}
+
+// NixOS allows underscores in host names, and an odd name costs only itself,
+// never the whole answer: the page names Pis by their tailnet names.
+func TestParseLenientNames(t *testing.T) {
+	cases := []struct {
+		host, peer         any
+		wantHost, wantPeer string
+	}{
+		{"pi_c", "pi_a", "pi_c", "pi_a"},
+		{"pi b; <x>", "bad name", "", ""},
+		{nil, nil, "", ""},
+		{"-pi", "pi-a-", "", ""},
+	}
+	for _, c := range cases {
+		m := example(t)
+		m["host"] = c.host
+		m["tunnel"].([]any)[0].(map[string]any)["peer"] = c.peer
+		s, err := Parse(encode(t, m))
+		if err != nil {
+			t.Fatalf("host %v, peer %v: %v", c.host, c.peer, err)
+		}
+		peer := ""
+		if s.Tunnel[0].Peer != nil {
+			peer = *s.Tunnel[0].Peer
+		}
+		if s.Host != c.wantHost || peer != c.wantPeer {
+			t.Errorf("host %v, peer %v: got %q, %q", c.host, c.peer, s.Host, peer)
+		}
 	}
 }

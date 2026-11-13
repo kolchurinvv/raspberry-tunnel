@@ -278,8 +278,8 @@ func TestPower(t *testing.T) {
 }
 
 func TestNames(t *testing.T) {
-	if n := NamesOf("pi-c"); n.Name != "Pi C" || n.TV != "TV C" || n.Apt != "apartment C" {
-		t.Errorf("NamesOf(pi-c) = %+v", n)
+	if n := NamesOf("pi_c"); n.Name != "Pi C" || n.TV != "TV C" || n.Apt != "apartment C" {
+		t.Errorf("NamesOf(pi_c) = %+v", n)
 	}
 	if n := NamesOf("raspberrypi"); n.Name != "raspberrypi" {
 		t.Errorf("NamesOf(raspberrypi) = %+v", n)

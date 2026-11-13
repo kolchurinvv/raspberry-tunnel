@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -23,6 +22,7 @@ import (
 
 	"github.com/kolchurinvv/raspberry-tunnel/dashboard/internal/collect"
 	"github.com/kolchurinvv/raspberry-tunnel/dashboard/internal/model"
+	"github.com/kolchurinvv/raspberry-tunnel/dashboard/internal/schema"
 )
 
 // The tags that matter here.
@@ -112,8 +112,6 @@ func (d *Discoverer) Peers(ctx context.Context) ([]collect.Peer, error) {
 	return peers, nil
 }
 
-var hostname = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
-
 func hasTag(ps *ipnstate.PeerStatus, tag string) bool {
 	if ps.Tags == nil {
 		return false
@@ -165,7 +163,7 @@ func Select(st *ipnstate.Status) ([]collect.Peer, []string) {
 		default:
 			continue
 		}
-		if !hostname.MatchString(ps.HostName) {
+		if !schema.Hostname.MatchString(ps.HostName) {
 			notes = append(notes, fmt.Sprintf("skipped a %s peer whose name isn't a host name", role))
 			continue
 		}
