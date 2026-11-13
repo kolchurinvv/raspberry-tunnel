@@ -47,24 +47,29 @@ func (o Outcome) Valid() bool {
 	return false
 }
 
-// Path is a gateway's tunnel path, as its Pi reports it, or PathNone when its
-// tunnel list is empty (no exit node set).
+// Path is a gateway's tunnel path, as its Pi reports it. Besides the paths in
+// the contract:
+//   - PathNone: its tunnel list is empty, so no exit node is set;
+//   - PathNoTailscale: its tunnel list is null, as tailscaled can't be reached;
+//   - PathUnknown: it sent a tunnel entry without a path, or nothing to read
+//     one from.
 type Path string
 
 const (
-	PathUnknown   Path = ""
-	PathNone      Path = "none"
-	PathDirect         = Path(schema.PathDirect)
-	PathPeerRelay      = Path(schema.PathPeerRelay)
-	PathDERP           = Path(schema.PathDERP)
-	PathIdle           = Path(schema.PathIdle)
-	PathOffline        = Path(schema.PathOffline)
+	PathUnknown     Path = ""
+	PathNone        Path = "none"
+	PathNoTailscale Path = "no_tailscale"
+	PathDirect           = Path(schema.PathDirect)
+	PathPeerRelay        = Path(schema.PathPeerRelay)
+	PathDERP             = Path(schema.PathDERP)
+	PathIdle             = Path(schema.PathIdle)
+	PathOffline          = Path(schema.PathOffline)
 )
 
 // Valid reports whether p is one of the paths above.
 func (p Path) Valid() bool {
 	switch p {
-	case PathUnknown, PathNone, PathDirect, PathPeerRelay, PathDERP, PathIdle, PathOffline:
+	case PathUnknown, PathNone, PathNoTailscale, PathDirect, PathPeerRelay, PathDERP, PathIdle, PathOffline:
 		return true
 	}
 	return false
@@ -76,6 +81,12 @@ func (p Path) Relayed() bool { return p == PathDERP || p == PathPeerRelay }
 // Up reports whether the tunnel can carry traffic.
 func (p Path) Up() bool {
 	return p == PathDirect || p == PathPeerRelay || p == PathDERP || p == PathIdle
+}
+
+// Down reports whether the tunnel is known to be down. PathUnknown is
+// neither up nor down.
+func (p Path) Down() bool {
+	return p == PathOffline || p == PathNone || p == PathNoTailscale
 }
 
 // Route is which connection a gateway's TV leaves through at one moment: D2's

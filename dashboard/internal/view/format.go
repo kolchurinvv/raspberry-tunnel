@@ -159,8 +159,10 @@ func pathWord(p model.Path) string {
 		return "down"
 	case model.PathNone:
 		return "no exit node set"
+	case model.PathNoTailscale:
+		return "down, Tailscale not running"
 	case model.PathUnknown:
-		return "unknown"
+		return "path unknown"
 	default:
 		panic("view: unknown path " + string(p))
 	}

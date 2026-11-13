@@ -607,7 +607,8 @@ func (c *Collector) sample(ts time.Time, a answer, exitIP *netip.Addr) model.Sam
 		}
 		switch {
 		case st.Tunnel == nil:
-			s.Path = model.PathUnknown
+			// The contract's null tunnel list: tailscaled can't be reached.
+			s.Path = model.PathNoTailscale
 		case t == nil:
 			s.Path = model.PathNone
 		case t.Path != nil:

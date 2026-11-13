@@ -340,7 +340,7 @@ func (st *state) topo() Topo {
 	}
 
 	exitUp := st.live && st.exit != nil && st.exit.Current
-	var relayed, down, own []string
+	var relayed, down, own, unknown, silent, idle []string
 	for _, g := range st.gateways {
 		row := TopoRow{
 			TV: TopoBox{Title: capital(g.TV), Sub: g.Apt},
@@ -353,6 +353,7 @@ func (st *state) topo() Topo {
 			row.Pi.Icon, row.Pi.Status = iconOf(Unknown), st.noDataSince()
 			link.Icon, link.Label, link.Sub, link.Line = iconOf(Unknown), "unknown", st.noDataSince(), "tl-none"
 		case !g.Current:
+			silent = append(silent, g.Name)
 			row.TV.Icon, row.TV.Status = iconOf(Unknown), "Unknown"
 			row.Pi.Icon, row.Pi.Status = iconOf(Crit), "No answer since "+st.lastOK(g)
 			link.Icon, link.Label, link.Sub, link.Line = iconOf(Unknown), "unknown", dash, "tl-none"
@@ -377,10 +378,14 @@ func (st *state) topo() Topo {
 			case s.Path.Relayed():
 				link.Icon, link.Line = iconOf(Warn), "tl-warn"
 				relayed = append(relayed, g.Name)
-			case s.Path == model.PathDirect || s.Path == model.PathIdle:
+			case s.Path == model.PathDirect:
 				link.Icon, link.Line = iconOf(Good), "tl-up"
+			case s.Path == model.PathIdle:
+				link.Icon, link.Line = iconOf(Good), "tl-up"
+				idle = append(idle, g.Name)
 			case s.Path == model.PathUnknown:
 				link.Icon, link.Line, sub = iconOf(Unknown), "tl-none", dash
+				unknown = append(unknown, g.Name)
 			default:
 				link.Icon, link.Line, sub = iconOf(Crit), "tl-down", "No traffic"
 				down = append(down, g.Name)
@@ -447,9 +452,16 @@ func (st *state) topo() Topo {
 		t.Caption = st.exitName() + " not answering"
 	case len(down) > 0:
 		t.Caption = "Tunnel down: " + joinAnd(down)
+	case len(silent) > 0:
+		t.Caption = "No answer: " + joinAnd(silent)
+	case len(unknown) > 0:
+		t.Caption = "Path unknown: " + joinAnd(unknown)
 	case len(relayed) > 0:
 		t.Caption = "Relayed: " + joinAnd(relayed)
+	case len(idle) > 0:
+		t.Caption = "All up, " + joinAnd(idle) + " idle"
 	default:
+		// Every gateway answered with a direct path: nothing else reaches here.
 		t.Caption = "All direct"
 	}
 	return t

@@ -105,6 +105,30 @@ func TestBanner(t *testing.T) {
 		{"gateway not answering", func(in *Input) {
 			in.Snap.Pis[1].Latest = model.Sample{TS: now, Host: "pi-b", Role: model.RoleGateway, Outcome: model.OutcomeTimeout, Route: model.RouteNoData}
 		}, Warn, "Pi B isn't answering"},
+		// A gateway that answers with its own tunnel down is critical, even
+		// while the dashboard reaches the exit (the user's ruling).
+		{"gateway tunnel offline", func(in *Input) {
+			in.Snap.Pis[1].Latest.Path, in.Snap.Pis[1].Latest.Route = model.PathOffline, model.RouteHeld
+		}, Crit, "Pi B's tunnel is down"},
+		{"gateway tunnel list empty", func(in *Input) {
+			in.Snap.Pis[1].Latest.Path, in.Snap.Pis[1].Latest.Route = model.PathNone, model.RouteHeld
+		}, Crit, "Pi B has no exit node set"},
+		{"gateway tunnel list null", func(in *Input) {
+			in.Snap.Pis[1].Latest.Path, in.Snap.Pis[1].Latest.Route = model.PathNoTailscale, model.RouteHeld
+		}, Crit, "Tailscale isn't running on Pi B"},
+		{"tunnel down with fallback set says fallback", func(in *Input) {
+			in.Snap.Pis[1].Latest.Path, in.Snap.Pis[1].Latest.Route, in.Snap.Pis[1].Latest.Fallback = model.PathOffline, model.RouteOwn, ptr(true)
+		}, Crit, "TV B is on apartment B's own connection"},
+		// The TV's port down is usually the TV off: no alarm.
+		{"port down", func(in *Input) {
+			in.Snap.Pis[1].Latest.TVLink, in.Snap.Pis[1].Latest.Route = ptr(false), model.RouteTVOff
+		}, Good, "All good"},
+		{"unknown path", func(in *Input) {
+			in.Snap.Pis[1].Latest.Path, in.Snap.Pis[1].Latest.Route = model.PathUnknown, model.RouteNoData
+		}, Warn, "Pi B's tunnel path is unknown"},
+		{"fallback unknown", func(in *Input) {
+			in.Snap.Pis[1].Latest.Fallback, in.Snap.Pis[1].Latest.Route = nil, model.RouteNoData
+		}, Warn, "Pi B's fallback rule is unknown"},
 		{"critical beats warning", func(in *Input) {
 			in.Snap.Pis[1].Latest.Path = model.PathDERP
 			in.Snap.Pis[0].Latest.Outcome = model.OutcomeOffline
@@ -181,7 +205,7 @@ func TestEvents(t *testing.T) {
 		"21:38|Pi B|TV B moved to apartment B's own connection|warn",
 		"21:37|Pi A|Stopped answering (timed out)|crit",
 		"21:36|Dashboard|Lost the tailnet. Showing the last data it had|unknown",
-		"21:34|Pi B|Path to Pi A changed from unknown to unknown|good",
+		"21:34|Pi B|Path to Pi A changed|info",
 		"Wed 19:40|Pi A|Rebooted|info",
 	}
 	if len(got) != len(want) {
@@ -275,7 +299,7 @@ func TestPower(t *testing.T) {
 		{ptr(false), ptr(int64(0)), Good, "Steady"},
 		{ptr(true), nil, Warn, "Low"},
 		{ptr(false), ptr(int64(3)), Warn, "Was low"},
-		{nil, nil, Info, "—"},
+		{nil, nil, Unknown, "Unknown"},
 	}
 	for _, c := range cases {
 		l, v, _ := powerOf(&model.Sample{Undervoltage: c.uv, UndervoltageEvents: c.events})
@@ -329,5 +353,87 @@ func TestPortDownIsNoAlarm(t *testing.T) {
 	}
 	if tv := p.Topo.Rows[0].TV; tv.Status != "Port down, likely off" || tv.Icon.Level != Info {
 		t.Errorf("TV box = %+v", tv)
+	}
+}
+
+// "All good" says only what the data says: never "direct" for an idle
+// tunnel, never "steady power" or "normal temperatures" when unknown, and
+// never the exit's address unless the check confirmed it.
+func TestAllGoodText(t *testing.T) {
+	cases := []struct {
+		name    string
+		mutate  func(pis []collect.Pi)
+		want    []string
+		notWant []string
+		caption string
+	}{
+		{"healthy", nil,
+			[]string{"TV B leaves through apartment A's connection over a direct tunnel, 11 ms between the Pis.", "Temperatures are normal and power is steady."},
+			[]string{"unknown"}, "All direct"},
+		{"idle", func(p []collect.Pi) { p[1].Latest.Path = model.PathIdle },
+			[]string{"an idle tunnel"}, []string{"direct"}, "All up, Pi B idle"},
+		{"no latency", func(p []collect.Pi) { p[1].Latest.LatencyMS = nil },
+			[]string{"over a direct tunnel."}, []string{" ms"}, "All direct"},
+		{"power unknown", func(p []collect.Pi) { p[0].Latest.Undervoltage = nil },
+			[]string{"power is unknown on Pi A"}, []string{"steady"}, "All direct"},
+		{"temperature unknown", func(p []collect.Pi) { p[1].Latest.TempC = nil },
+			[]string{"Temperature is unknown on Pi B and power is steady."}, []string{"normal"}, "All direct"},
+		{"exit check unconfirmed", func(p []collect.Pi) { p[1].Latest.ExitMatch = nil },
+			[]string{"Pi B reaches Pi A over a direct tunnel", "isn't confirmed yet for Pi B"},
+			[]string{"leaves through apartment A"}, "All direct"},
+		{"TV off", func(p []collect.Pi) { p[1].Latest.TVLink, p[1].Latest.Route = ptr(false), model.RouteTVOff },
+			[]string{"Pi B reaches Pi A", "TV B is likely off"}, []string{"TV B leaves through"}, "All direct"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			pis := healthy()
+			if c.mutate != nil {
+				c.mutate(pis)
+			}
+			p := Build(input(pis...))
+			if p.Banner.Title != "All good" {
+				t.Fatalf("banner = %q: %s", p.Banner.Title, p.Banner.Text)
+			}
+			for _, w := range c.want {
+				if !strings.Contains(p.Banner.Text, w) {
+					t.Errorf("text lacks %q: %s", w, p.Banner.Text)
+				}
+			}
+			for _, w := range c.notWant {
+				if strings.Contains(p.Banner.Text, w) {
+					t.Errorf("text has %q: %s", w, p.Banner.Text)
+				}
+			}
+			if p.Topo.Caption != c.caption {
+				t.Errorf("caption = %q, want %q", p.Topo.Caption, c.caption)
+			}
+		})
+	}
+
+	// Two gateways name each one's path.
+	pis := append(healthy(), piOf(ok("pi-c", model.RoleGateway)))
+	pis[2].Latest.Path = model.PathIdle
+	if txt := Build(input(pis...)).Banner.Text; !strings.Contains(txt, "All 2 gateways reach Pi A: Pi B direct (11 ms) and Pi C idle (11 ms).") {
+		t.Errorf("two gateways: %s", txt)
+	}
+}
+
+// Every way a gateway's tunnel can be known down, unknown or unanswered has a
+// caption of its own, and none reads "All direct".
+func TestCaptions(t *testing.T) {
+	for path, want := range map[model.Path]string{
+		model.PathOffline: "Tunnel down: Pi B", model.PathNone: "Tunnel down: Pi B", model.PathNoTailscale: "Tunnel down: Pi B",
+		model.PathUnknown: "Path unknown: Pi B", model.PathDERP: "Relayed: Pi B",
+	} {
+		pis := healthy()
+		pis[1].Latest.Path = path
+		if got := Build(input(pis...)).Topo.Caption; got != want {
+			t.Errorf("%q: caption %q, want %q", path, got, want)
+		}
+	}
+	pis := healthy()
+	pis[1].Latest = model.Sample{TS: now, Host: "pi-b", Role: model.RoleGateway, Outcome: model.OutcomeTimeout, Route: model.RouteNoData}
+	if got := Build(input(pis...)).Topo.Caption; got != "No answer: Pi B" {
+		t.Errorf("no answer: caption %q", got)
 	}
 }

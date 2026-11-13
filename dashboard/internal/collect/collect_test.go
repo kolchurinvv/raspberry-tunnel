@@ -306,7 +306,7 @@ func TestCycleNulls(t *testing.T) {
 	r.col.Cycle(context.Background(), t0)
 	b := r.samples()["pi-b"][0]
 	if b.Outcome != model.OutcomeOK || b.TempC != nil || b.MemPct != nil || b.Fallback != nil || b.ExitMatch != nil ||
-		b.Path != model.PathUnknown || b.Route != model.RouteNoData {
+		b.Path != model.PathNoTailscale || b.Route != model.RouteNoData {
 		t.Errorf("sample = %+v", b)
 	}
 }

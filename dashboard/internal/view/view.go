@@ -256,7 +256,7 @@ func powerOf(s *model.Sample) (Level, string, string) {
 	case s.UndervoltageEvents != nil && *s.UndervoltageEvents > 0:
 		return Warn, "Was low", plural(int(*s.UndervoltageEvents), "time", "times") + " since boot"
 	case s.Undervoltage == nil:
-		return Info, dash, "no sensor"
+		return Unknown, "Unknown", "no undervoltage reading"
 	case s.UndervoltageEvents == nil:
 		return Good, "Steady", "no undervoltage now"
 	default:
@@ -327,16 +327,48 @@ func (st *state) banner() Banner {
 		issues = append(issues, issue{Crit, exit.Name + " isn't answering",
 			exit.Name + " hasn't answered since " + st.lastOK(exit) + " (" + failureLabel(exit.Latest.Outcome) + "). Gateways move their TVs to their own connections while the tunnel is down."})
 	}
+	// Critical too: a gateway that answers but says its own tunnel is down,
+	// whether or not the dashboard still reaches the exit. With the fallback
+	// rule set, the issue above already says so.
+	for _, g := range st.gateways {
+		if !g.Current || !g.Latest.Path.Down() || (g.Latest.Fallback != nil && *g.Latest.Fallback) {
+			continue
+		}
+		held := ""
+		if g.Latest.Route == model.RouteHeld {
+			held = " " + g.TV + " has no internet until " + g.Name + " moves it to " + g.Apt + "'s own connection."
+		}
+		switch g.Latest.Path {
+		case model.PathOffline:
+			issues = append(issues, issue{Crit, g.Name + "'s tunnel is down",
+				g.Name + " reports its tunnel to " + st.exitName() + " is down." + held})
+		case model.PathNone:
+			issues = append(issues, issue{Crit, g.Name + " has no exit node set",
+				g.Name + " isn't using " + st.exitName() + " as its exit node, so its tunnel is down." + held})
+		case model.PathNoTailscale:
+			issues = append(issues, issue{Crit, "Tailscale isn't running on " + g.Name,
+				g.Name + " can't reach its own Tailscale, so its tunnel to " + st.exitName() + " is down." + held})
+		default:
+			panic("view: unhandled down path " + string(g.Latest.Path))
+		}
+	}
 
-	// Warnings.
+	// Warnings, including whatever keeps the dashboard from knowing.
 	for _, g := range st.gateways {
 		switch {
 		case !g.Current:
 			issues = append(issues, issue{Warn, g.Name + " isn't answering",
 				g.Name + " hasn't answered since " + st.lastOK(g) + " (" + failureLabel(g.Latest.Outcome) + "), so the dashboard can't tell where " + g.TV + "'s traffic goes."})
+		case g.Latest.Path == model.PathUnknown:
+			issues = append(issues, issue{Warn, g.Name + "'s tunnel path is unknown",
+				g.Name + " answered without its tunnel's path, so the dashboard can't tell whether " + g.TV + "'s traffic is on the tunnel."})
 		case g.Latest.Path.Relayed():
 			issues = append(issues, issue{Warn, g.Name + "'s tunnel is relayed",
 				g.Name + " reaches " + st.exitName() + " through a relay rather than directly, " + ms(g.Latest.LatencyMS) + " between the Pis. " + g.TV + " still leaves through " + st.exitApt() + "'s connection."})
+		}
+		if g.Current && g.Latest.Fallback == nil {
+			issues = append(issues, issue{Warn, g.Name + "'s fallback rule is unknown",
+				g.Name + " didn't say whether its fallback rule is set, so the dashboard can't tell which connection " + g.TV + " uses."})
 		}
 		if g.Current && g.Latest.ExitMatch != nil && !*g.Latest.ExitMatch {
 			issues = append(issues, issue{Warn, g.Name + "'s exit address doesn't match",
@@ -379,22 +411,93 @@ func (st *state) banner() Banner {
 	return Banner{iconOf(worst.level), worst.title, text}
 }
 
+// allGood says what "all good" rests on, from the data only: the paths and
+// latencies the gateways report, whether the exit check confirmed the
+// address, and what's known of temperature and power. It's reached only when
+// every Pi answers, every tunnel is direct or idle, and nothing warns.
 func (st *state) allGood() string {
+	exit := st.exitName()
+	tunnel := func(g *pi) string {
+		p := "a direct tunnel"
+		if g.Latest.Path == model.PathIdle {
+			p = "an idle tunnel"
+		}
+		if g.Latest.LatencyMS != nil {
+			p += ", " + ms(g.Latest.LatencyMS) + " between the Pis"
+		}
+		return p
+	}
+	var unconfirmed, off []string
+	for _, g := range st.gateways {
+		if g.Latest.ExitMatch == nil {
+			unconfirmed = append(unconfirmed, g.Name)
+		}
+		if g.Latest.Route == model.RouteTVOff {
+			off = append(off, g.TV)
+		}
+	}
+	var b []string
 	switch len(st.gateways) {
 	case 0:
-		return st.exitName() + " is up. No gateway has joined yet."
+		b = append(b, exit+" is up. No gateway has joined yet.")
 	case 1:
 		g := st.gateways[0]
-		path := "a direct tunnel"
-		if g.Latest.Path == model.PathIdle {
-			path = "an idle tunnel"
+		if g.Latest.ExitMatch != nil && g.Latest.Route == model.RouteTunnel {
+			b = append(b, g.TV+" leaves through "+st.exitApt()+"'s connection over "+tunnel(g)+".")
+		} else {
+			b = append(b, g.Name+" reaches "+exit+" over "+tunnel(g)+".")
 		}
-		return g.TV + " leaves through " + st.exitApt() + "'s connection over " + path + ", " + ms(g.Latest.LatencyMS) +
-			" between the Pis. Both Pis report normal temperatures and steady power."
 	default:
-		return fmt.Sprintf("All %d apartments leave through %s, so every TV shows %s's address. Every Pi reports normal temperature and steady power.",
-			len(st.gateways), st.exitName(), st.exitApt())
+		var each []string
+		for _, g := range st.gateways {
+			w := g.Name + " " + pathWord(g.Latest.Path)
+			if g.Latest.LatencyMS != nil {
+				w += " (" + ms(g.Latest.LatencyMS) + ")"
+			}
+			each = append(each, w)
+		}
+		b = append(b, fmt.Sprintf("All %d gateways reach %s: %s.", len(st.gateways), exit, joinAnd(each)))
+		if len(unconfirmed) == 0 {
+			b = append(b, "Every TV leaves through "+st.exitApt()+"'s connection.")
+		}
 	}
+	if len(unconfirmed) > 0 {
+		b = append(b, "The exit address isn't confirmed yet for "+joinAnd(unconfirmed)+".")
+	}
+	if len(off) > 0 {
+		b = append(b, joinAnd(off)+" "+plural0(len(off), "is", "are")+" likely off: the port is down.")
+	}
+	return strings.Join(append(b, st.health()), " ")
+}
+
+// health says what's known of temperature and power. Unknown is said as
+// unknown, never as normal or steady.
+func (st *state) health() string {
+	var noTemp, noPower []string
+	for _, x := range st.all {
+		if x.Latest.TempC == nil {
+			noTemp = append(noTemp, x.Name)
+		}
+		if x.Latest.Undervoltage == nil {
+			noPower = append(noPower, x.Name)
+		}
+	}
+	temp := "temperatures are normal"
+	if len(noTemp) > 0 {
+		temp = "temperature is unknown on " + joinAnd(noTemp)
+	}
+	power := "power is steady"
+	if len(noPower) > 0 {
+		power = "power is unknown on " + joinAnd(noPower)
+	}
+	return capital(temp + " and " + power + ".")
+}
+
+func plural0(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 func capital(s string) string {
@@ -492,8 +595,11 @@ func (st *state) eventText(e model.Event, n Names) (Level, string) {
 	case model.EventFallbackCleared:
 		return Good, n.TV + " back on the tunnel"
 	case model.EventTunnelDown:
-		if model.Path(e.Detail) == model.PathNone {
+		switch model.Path(e.Detail) {
+		case model.PathNone:
 			return Warn, "No exit node set"
+		case model.PathNoTailscale:
+			return Warn, "Tunnel to " + exitName + " went down: Tailscale isn't running"
 		}
 		return Warn, "Tunnel to " + exitName + " went down"
 	case model.EventTunnelUp:
@@ -505,6 +611,9 @@ func (st *state) eventText(e model.Event, n Names) (Level, string) {
 	case model.EventPathChange:
 		from, to, _ := strings.Cut(e.Detail, ">")
 		f, t := validPath(from), validPath(to)
+		if f == model.PathUnknown || t == model.PathUnknown {
+			return Info, "Path to " + exitName + " changed"
+		}
 		l := Good
 		if t.Relayed() {
 			l = Warn
@@ -637,7 +746,7 @@ func (st *state) checks() []CheckRow {
 			switch l, _, _ := powerOf(s); l {
 			case Warn:
 				bad = append(bad, x.Name)
-			case Info:
+			case Info, Unknown:
 				unknown = append(unknown, x.Name)
 			}
 		}
