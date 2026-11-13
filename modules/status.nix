@@ -56,7 +56,9 @@ let
     runtimeInputs = [ pkgs.coreutils pkgs.jq pkgs.netcat-openbsd ] ++ lib.optional gateway pkgs.iproute2;
     text = ''
       # systemd connects stdin and stdout to the client, and stderr to the
-      # journal, where a line starting <4> is a warning.
+      # journal. A line there is a warning unless it starts with another level,
+      # such as <3> for an error. None may carry an address, so what reads
+      # tailscaled's data or the client's keeps its own messages to itself.
       # extglob for the number checks below, which cost a tenth of a regex.
       shopt -s extglob nullglob
 
@@ -71,8 +73,11 @@ let
           "$status" "''${#body}" "$body"
         replied=1
       }
-      # Whatever stops the script before it replies, the client still gets a 500.
-      trap '[[ -n $replied ]] || reply "500 Internal Server Error" "{\"schema\":1,\"error\":\"the status script stopped before replying\"}"' EXIT
+      # Whatever stops the script before it replies, the client still gets a 500,
+      # and the journal an error. The script then exits 0, here and wherever it
+      # has logged its own failure: systemd's lines about a failed unit name it,
+      # and an instance's name holds both ends' addresses.
+      trap 'status=$?; if [[ -z $replied ]]; then echo "<3>the status script stopped before replying, with status $status" >&2; reply "500 Internal Server Error" "{\"schema\":1,\"error\":\"the status script stopped before replying\"}"; exit 0; fi' EXIT
 
       # Sets left to what's left of the request's first $1 microseconds, in the
       # seconds read -t takes, or fails once they're spent. No process.
@@ -289,10 +294,11 @@ let
           --arg role ${lib.escapeShellArg cfg.role} \
           --arg ping_ip "$ping_ip" \
           --arg ping "$ping" \
-          --from-file ${./tunnel.jq} <<< "$tailscale"); then
+          --from-file ${./tunnel.jq} <<< "$tailscale" 2> /dev/null); then
           :
         else
-          echo "<4>building the tunnel list failed: jq exited with $?" >&2
+          # jq's own message can quote the data it choked on.
+          echo "<3>building the tunnel list failed: jq exited with $?" >&2
           reply "500 Internal Server Error" '{"schema":1,"error":"building the reply failed"}'
           exit 0
         fi
@@ -391,8 +397,11 @@ in
         # A failed request doesn't stay behind in systemctl --failed.
         CollectMode = "inactive-or-failed";
         # systemd's info lines name each connection's addresses, twice a minute.
-        # Warnings and errors still show.
+        # Warnings and errors still show. That includes anything the script
+        # writes to stderr without a level, as SyslogLevel makes it a warning
+        # rather than info, which LogLevelMax would drop.
         LogLevelMax = "notice";
+        SyslogLevel = "warning";
         # Behind tailscaled and the TV's traffic.
         Nice = 10;
         MemoryMax = "64M";
