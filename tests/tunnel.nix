@@ -668,6 +668,19 @@ in
         pi_b.fail(status_port(pi_a_tailnet))
         pi_a.fail(status_port(pi_b_tailnet))
 
+    with subtest("the dashboard reaches the Pis' status endpoint and nothing else on the tailnet"):
+        # The two Pis are its only peers.
+        peers = json.loads(web.succeed("tailscale status --json"))["Peer"] or {}
+        assert sorted(peer["HostName"] for peer in peers.values()) == ["pi-a", "pi-b"], [peer["HostName"] for peer in peers.values()]
+        # Not their SSH, which the phone reaches.
+        for address in (pi_a_tailnet, pi_b_tailnet):
+            web.fail(ssh_port(address))
+        # Nor the phone, whose site answers on its tailnet address.
+        phone_tailnet = phone.succeed("tailscale ip -4").strip()
+        phone.succeed(f"curl -fsS --max-time 5 http://{phone_tailnet}/")
+        web.fail(f"curl -fsS --max-time 3 http://{phone_tailnet}/")
+        web.fail(f"ping -c 1 -W 2 {phone_tailnet}")
+
     with subtest("both Pis' exit checks see Pi A's address, so Pi B's traffic leaves through Pi A"):
         for machine, address in ((pi_a, pi_a_tailnet), (pi_b, pi_b_tailnet)):
             machine.succeed("systemctl is-active pi-exit-check.timer")
