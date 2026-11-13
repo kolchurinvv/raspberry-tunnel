@@ -409,27 +409,31 @@ in
         TasksMax = 16;
 
         # Nothing it reads needs a privilege: /proc, /sys, rules over netlink,
-        # the files under /run that the exit check and tv-port-gate write, and
-        # tailscaled's socket, which is world-writable and gives any local user
-        # read access to the local API. So it runs as a throwaway user with no
-        # capabilities, and no address family beyond what it uses: AF_UNIX for
-        # tailscaled, and on a gateway AF_NETLINK for ip rule.
-        DynamicUser = true;
+        # the files under /run that the exit check and tv-port-gate write, both
+        # world-readable, and tailscaled's socket, which is world-writable and
+        # gives any local user read access to the local API. So it runs as a user
+        # of its own with no capabilities, no way to gain any, and no address
+        # family beyond what it uses: AF_UNIX for tailscaled, and on a gateway
+        # AF_NETLINK for ip rule.
+        #
+        # A lighter sandbox than usual, by the user's ruling on 2026-11-13: a
+        # security trade for less work per request on a Pi 3 B+. No DynamicUser,
+        # and nothing that sets up a namespace or other per-instance state when
+        # a request starts, such as ProtectSystem, PrivateTmp, PrivateDevices,
+        # ProtectHome, ProtectKernel*, ProtectControlGroups, ProtectProc,
+        # ProtectHostname or ProtectClock. So the script sees the filesystem as
+        # any unprivileged user does, and could write where such a user can,
+        # /tmp for one. What stays costs only a seccomp filter or a process
+        # attribute, and still keeps the kernel calls those options would have
+        # guarded, as ~@privileged covers modules, clocks and the hostname.
         User = "pi-status";
+        Group = "pi-status";
         CapabilityBoundingSet = "";
         NoNewPrivileges = true;
         RestrictAddressFamilies = [ "AF_UNIX" ] ++ lib.optional gateway "AF_NETLINK";
-        PrivateDevices = true;
-        ProtectClock = true;
-        ProtectControlGroups = true;
-        ProtectHome = true;
-        ProtectHostname = true;
-        ProtectKernelLogs = true;
-        ProtectKernelModules = true;
-        ProtectKernelTunables = true;
-        ProtectProc = "invisible";
         RestrictNamespaces = true;
         RestrictRealtime = true;
+        RestrictSUIDSGID = true;
         LockPersonality = true;
         MemoryDenyWriteExecute = true;
         SystemCallArchitectures = "native";
@@ -501,6 +505,13 @@ in
         SystemCallFilter = [ "@system-service" "~@privileged" ];
       };
     };
+
+    users.users.pi-status = {
+      isSystemUser = true;
+      group = "pi-status";
+      description = "Status endpoint for the tunnel's dashboard";
+    };
+    users.groups.pi-status = { };
 
     users.users.pi-exit-check = {
       isSystemUser = true;
