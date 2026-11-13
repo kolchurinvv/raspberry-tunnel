@@ -1,6 +1,7 @@
 package view
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -159,6 +160,19 @@ func TestBanner(t *testing.T) {
 				t.Errorf("banner = %s %q, want %s %q (%s)", b.Icon.Level, b.Title, c.level, c.title, b.Text)
 			}
 		})
+	}
+}
+
+// The hot banner gives the soft limit and the hard limit, not the warning's
+// own threshold (D4).
+func TestHotBannerText(t *testing.T) {
+	in := input(healthy()...)
+	in.Snap.Pis[0].Latest.TempC = ptr(72.0)
+	b := Build(in).Banner
+	for _, w := range []string{"Pi A is at 72 °C.", "lowers its clock from 60 °C", "nears 85 °C"} {
+		if !strings.Contains(b.Text, w) {
+			t.Errorf("banner text %q lacks %q", b.Text, w)
+		}
 	}
 }
 
@@ -337,6 +351,10 @@ func TestChartsShape(t *testing.T) {
 	temp := p.Charts[2]
 	if temp.Ref == "" || !strings.HasPrefix(temp.RefLabel, "60 °C,") {
 		t.Errorf("temperature chart has no 60 °C line")
+	}
+	// The fixture's 47 °C gives the chart a 30–70 °C scale.
+	if want := fmt.Sprintf("%.2f", yOf(TempClock, 30, 70)); temp.RefTop != want {
+		t.Errorf("the 60 °C line is drawn at y %s, want %s", temp.RefTop, want)
 	}
 	if p.Hover.N != in.Window.N || len(p.Hover.Times) != in.Window.N || len(p.Hover.Charts) != 4 || len(p.Hover.Route) != 1 {
 		t.Errorf("hover data = n %d, times %d, charts %d, route %d", p.Hover.N, len(p.Hover.Times), len(p.Hover.Charts), len(p.Hover.Route))
