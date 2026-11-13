@@ -30,7 +30,7 @@ assert lib.assertMsg (tailscaleInGoMod == tailscale.version)
       ./go.mod
       ./go.sum
       (lib.fileset.fileFilter (
-        f: lib.any f.hasExt [ "go" "html" "css" "js" "svg" ]
+        f: lib.any f.hasExt [ "go" "html" "css" "js" "svg" "woff2" "txt" ]
       ) ./.)
     ];
   };

@@ -16,6 +16,7 @@ import (
 	"mime"
 	"net/http"
 	"path"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -82,20 +83,43 @@ func New(opt Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Stylesheets go last: they name other assets, such as the font, by file
+	// name, and those names are rewritten to their published URLs first.
+	var sheets []string
 	for _, e := range entries {
+		if path.Ext(e.Name()) == ".css" {
+			sheets = append(sheets, e.Name())
+			continue
+		}
 		body, err := files.ReadFile("static/" + e.Name())
 		if err != nil {
 			return nil, err
 		}
-		sum := sha256.Sum256(body)
-		ext := path.Ext(e.Name())
-		published := strings.TrimSuffix(e.Name(), ext) + "." + hex.EncodeToString(sum[:])[:12] + ext
-		ctype := mime.TypeByExtension(ext)
-		if ctype == "" {
-			return nil, fmt.Errorf("no content type for %s", e.Name())
+		if err := s.publish(e.Name(), body); err != nil {
+			return nil, err
 		}
-		s.assets[published] = asset{body, ctype}
-		s.names[e.Name()] = Prefix + "static/" + published
+	}
+	for _, name := range sheets {
+		body, err := files.ReadFile("static/" + name)
+		if err != nil {
+			return nil, err
+		}
+		var bad error
+		body = cssURL.ReplaceAllFunc(body, func(m []byte) []byte {
+			ref := string(cssURL.FindSubmatch(m)[1])
+			p, ok := s.names[ref]
+			if !ok {
+				bad = fmt.Errorf("%s names %q, which isn't a static file", name, ref)
+				return m
+			}
+			return []byte("url(" + p + ")")
+		})
+		if bad != nil {
+			return nil, bad
+		}
+		if err := s.publish(name, body); err != nil {
+			return nil, err
+		}
 	}
 	s.tmpl, err = template.New("").Funcs(template.FuncMap{
 		"asset": func(name string) (string, error) {
@@ -135,10 +159,10 @@ func (s *Server) Handler() http.Handler {
 	return headers(mux)
 }
 
-// csp allows only this site's own script, stylesheet and requests, plus the
+// csp allows only this site's own script, stylesheet, font and requests, plus the
 // style attributes the server renders for gauges and charts.
 const csp = "default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; " +
-	"img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+	"img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 func headers(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -285,4 +309,21 @@ func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Fprintln(w, "ready")
+}
+
+// cssURL matches a stylesheet's url(name), which must name a static file.
+var cssURL = regexp.MustCompile(`url\(\s*['"]?([^'")\s]+)['"]?\s*\)`)
+
+// publish serves body under a name carrying its content's hash.
+func (s *Server) publish(name string, body []byte) error {
+	sum := sha256.Sum256(body)
+	ext := path.Ext(name)
+	published := strings.TrimSuffix(name, ext) + "." + hex.EncodeToString(sum[:])[:12] + ext
+	ctype := mime.TypeByExtension(ext)
+	if ctype == "" {
+		return fmt.Errorf("no content type for %s", name)
+	}
+	s.assets[published] = asset{body, ctype}
+	s.names[name] = Prefix + "static/" + published
+	return nil
 }

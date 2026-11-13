@@ -247,14 +247,17 @@ func publicResponses(t *testing.T, s *site) map[string]string {
 	for _, r := range []string{"1h", "24h", "7d", "30d", "bogus"} {
 		paths = append(paths, "/?range="+r, "/_dash/fragment?range="+r)
 	}
-	for _, p := range paths {
+	// Follow every asset the responses name, the stylesheet's font included.
+	for len(paths) > 0 {
+		p := paths[0]
+		paths = paths[1:]
+		if _, done := out[p]; done {
+			continue
+		}
 		_, body, _ := get(t, s.srv.URL+p)
 		out[p] = body
-		for _, a := range assetRef.FindAllString(body, -1) {
-			if _, ok := out[a]; !ok {
-				_, ab, _ := get(t, s.srv.URL+a)
-				out[a] = ab
-			}
+		if !strings.HasSuffix(p, ".woff2") {
+			paths = append(paths, assetRef.FindAllString(body, -1)...)
 		}
 	}
 	return out
@@ -268,7 +271,7 @@ func checkPrivate(t *testing.T, responses map[string]string) {
 				t.Errorf("%s contains %q", path, secret)
 			}
 		}
-		if strings.HasSuffix(path, ".svg") {
+		if strings.HasSuffix(path, ".svg") || strings.HasSuffix(path, ".woff2") {
 			continue
 		}
 		for _, tok := range addrToken.FindAllString(body, -1) {
@@ -369,6 +372,13 @@ func TestRoutes(t *testing.T) {
 			for _, m := range jsURL.FindAllStringSubmatch(body, -1) {
 				found = append(found, m[1])
 			}
+		case strings.HasSuffix(path, ".woff2"):
+			assets++
+			_, _, h := get(t, s.srv.URL+path)
+			if ct := h.Get("Content-Type"); ct != "font/woff2" {
+				t.Errorf("%s served as %q", path, ct)
+			}
+			continue
 		case strings.HasSuffix(path, ".svg"):
 			assets++
 			// Only its XML namespace.
@@ -393,8 +403,8 @@ func TestRoutes(t *testing.T) {
 			}
 		}
 	}
-	if assets != 3 {
-		t.Errorf("checked %d assets, want the CSS, the script and the icon", assets)
+	if assets != 4 {
+		t.Errorf("checked %d assets, want the CSS, the script, the icon and the font", assets)
 	}
 
 	// The page asks for the icon under /_dash/.
@@ -422,7 +432,7 @@ func TestHeadersAndCache(t *testing.T) {
 	s := newSite(t)
 	s.col.Cycle(context.Background(), time.Now().Truncate(30*time.Second))
 	_, a, h := get(t, s.srv.URL+"/")
-	if csp := h.Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") || !strings.Contains(csp, "frame-ancestors 'none'") {
+	if csp := h.Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") || !strings.Contains(csp, "font-src 'self'") || !strings.Contains(csp, "frame-ancestors 'none'") {
 		t.Errorf("CSP = %q", csp)
 	}
 	if h.Get("X-Content-Type-Options") != "nosniff" || !strings.HasPrefix(h.Get("Content-Type"), "text/html") {
