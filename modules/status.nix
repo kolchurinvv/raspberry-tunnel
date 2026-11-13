@@ -4,16 +4,18 @@
 #
 # It's socket-activated with one service per connection, so nothing runs between
 # requests. Each request runs one script, unprivileged, that reads /proc and
-# /sys, asks tailscaled's local API over its socket, and hands what it read to
-# jq (status.jq), which builds the reply. The processes one request starts:
-# - both Pis: nc for tailscaled's status, stat for the root filesystem, jq;
+# /sys, asks tailscaled's local API over its socket, and builds the reply, with
+# jq (tunnel.jq) for the part that comes from tailscaled's JSON. The processes
+# one request starts:
+# - both Pis: nc for tailscaled's status, stat for the root filesystem, and jq
+#   unless tailscaled didn't answer;
 # - a gateway, also: nc for one disco ping to its exit node, ip for rule 5260.
 #
 # nc rather than curl for the local API: it starts in a quarter of curl's CPU
 # time, as curl links TLS and Kerberos libraries it never uses here, and on a
 # Pi 3 that difference is a good part of a request's cost. It speaks HTTP/1.0,
 # so tailscaled's answer is never chunked and ends when tailscaled closes the
-# connection, and status.jq checks its status line.
+# connection, and tunnel.jq checks its status line.
 { config, lib, pkgs, ... }:
 
 let
@@ -41,13 +43,18 @@ let
   # Every step that waits has a deadline, so the reply arrives within D2's 2
   # seconds: nc gives up on tailscaled after a second without data, and the
   # rest is local. Only the ping normally takes that second, when no pong comes.
+  #
+  # bash builds the reply, checking every value it read against the shape its
+  # field takes, and jq only the tunnel list from tailscaled's JSON: a jq
+  # program for the whole reply took about twice the CPU.
   statusScript = pkgs.writeShellApplication {
     name = "pi-status";
     runtimeInputs = [ pkgs.coreutils pkgs.jq pkgs.netcat-openbsd ] ++ lib.optional gateway pkgs.iproute2;
     text = ''
       # systemd connects stdin and stdout to the client, and stderr to the
       # journal, where a line starting <4> is a warning.
-      shopt -s nullglob
+      # extglob for the number checks below, which cost a tenth of a regex.
+      shopt -s extglob nullglob
 
       replied=
       reply() {
@@ -64,6 +71,23 @@ let
       first_line() {
         printf -v "''${1?}" '%s' ""
         { IFS= read -r "''${1?}"; } 2> /dev/null < "$2" || true
+      }
+
+      # Set the variable named by $1 to the JSON for the text in $2, or to null
+      # if the text isn't of that shape: a whole number, a decimal, or a 0 or 1
+      # flag. No process.
+      json_count() {
+        if [[ $2 == @(0|[1-9]*([0-9])) ]]; then printf -v "''${1?}" '%s' "$2"; else printf -v "''${1?}" null; fi
+      }
+      json_decimal() {
+        if [[ $2 == @(0|[1-9]*([0-9]))?(.+([0-9])) ]]; then printf -v "''${1?}" '%s' "$2"; else printf -v "''${1?}" null; fi
+      }
+      json_flag() {
+        case $2 in
+          1) printf -v "''${1?}" true ;;
+          0) printf -v "''${1?}" false ;;
+          *) printf -v "''${1?}" null ;;
+        esac
       }
 
       # The request line, then the headers up to the blank line. All of them:
@@ -92,61 +116,14 @@ let
         exit 0
       fi
 
-      uptime="" loadavg="" cpu="" type="" name="" rx="" tx="" public_ip=""
-
-      # TZ is UTC in the unit's environment.
-      printf -v now '%(%Y-%m-%dT%H:%M:%SZ)T' -1
-      first_line uptime /proc/uptime
-      first_line loadavg /proc/loadavg
-      first_line cpu /proc/stat
-
-      mem_total="" mem_available=""
-      while read -r key value _; do
-        case $key in
-          MemTotal:) mem_total=$value ;;
-          MemAvailable:) mem_available=$value ;;
-        esac
-        if [[ -n $mem_total && -n $mem_available ]]; then break; fi
-      done 2> /dev/null < /proc/meminfo || true
-
-      # The SoC's, and the Pi firmware's undervoltage alarm, which the driver
-      # polls every 2 seconds. A VM has neither.
-      temp=
-      for zone in /sys/class/thermal/thermal_zone*; do
-        first_line type "$zone/type"
-        if [[ $type == cpu-thermal ]]; then
-          first_line temp "$zone/temp"
-          break
-        fi
-      done
-      undervoltage=
-      for hwmon in /sys/class/hwmon/hwmon*; do
-        first_line name "$hwmon/name"
-        if [[ $name == rpi_volt ]]; then
-          first_line undervoltage "$hwmon/in0_lcrit_alarm"
-          break
-        fi
-      done
-
-      disk=$(stat --file-system --format='%S %b %f %a' / 2> /dev/null) || true
-
-      net=""
-      for interface in ${lib.escapeShellArgs interfaces}; do
-        first_line rx "/sys/class/net/$interface/statistics/rx_bytes"
-        first_line tx "/sys/class/net/$interface/statistics/tx_bytes"
-        net+="$interface ''${rx:--} ''${tx:--}"$'\n'
-      done
-
       # tailscaled's local API, which lets any local user read the status, and
       # ping without asking for any permission at all. The here-string adds the
       # request's last \n.
       tailscale=$(nc -U -w 1 ${socket} 2> /dev/null \
         <<< $'GET /localapi/v0/status HTTP/1.0\r\nHost: local-tailscaled.sock\r\n\r') || true
 
-      ping_ip="" ping="" tv_link="" tv_speed="" tv_port_gated="" fallback=""
+      ping_ip="" ping="" gateway=null
       ${lib.optionalString gateway ''
-        operstate="" verdict=""
-
         # The exit node's IPv4 address, to ping it. Only a pointer: jq checks
         # the answer came from the address the full status gives the exit node.
         exit_node_ip='"ExitNodeStatus":[[:space:]]*\{[^}]*"TailscaleIPs":[[:space:]]*\[[^]]*"(([0-9]{1,3}\.){3}[0-9]{1,3})/32"'
@@ -158,66 +135,153 @@ let
             <<< "POST /localapi/v0/ping?ip=$ping_ip&type=disco HTTP/1.0"$'\r\nHost: local-tailscaled.sock\r\nContent-Length: 0\r\n\r') || true
         fi
 
+        link=null speed=null operstate="" speed_text=""
         if [[ -e /sys/class/net/${cfg.tv} ]]; then
           first_line operstate /sys/class/net/${cfg.tv}/operstate
           case $operstate in
             up)
-              tv_link=1
-              first_line tv_speed /sys/class/net/${cfg.tv}/speed
+              link=true
+              first_line speed_text /sys/class/net/${cfg.tv}/speed
+              json_count speed "$speed_text"
+              if [[ $speed == 0 ]]; then speed=null; fi
               ;;
-            down | lowerlayerdown | dormant | notpresent) tv_link=0 ;;
+            down | lowerlayerdown | dormant | notpresent) link=false ;;
           esac
         else
           # The adapter isn't plugged in.
-          tv_link=0
+          link=false
         fi
 
         # Only tv-port-gate writes it, and systemd removes it when the gate
         # stops, so without it the port isn't gated.
+        gated=false verdict=""
         if [[ -e ${tvPortVerdict} ]]; then
           first_line verdict ${tvPortVerdict}
           case $verdict in
-            loaded) tv_port_gated=1 ;;
-            missing) tv_port_gated=0 ;;
+            loaded) gated=true ;;
+            missing) gated=false ;;
+            *) gated=null ;;
           esac
-        else
-          tv_port_gated=0
         fi
 
         # Reading rules over netlink takes no capability.
+        fallback=null
         if rule=$(ip rule show priority ${toString fallbackPriority} 2> /dev/null); then
-          if [[ -n $rule ]]; then fallback=1; else fallback=0; fi
+          if [[ -n $rule ]]; then fallback=true; else fallback=false; fi
         fi
+
+        printf -v gateway '{"tv_port":{"link":%s,"speed_mbps":%s},"tv_port_gated":%s,"fallback":%s}' \
+          "$link" "$speed" "$gated" "$fallback"
       ''}
 
-      first_line public_ip ${publicIpCache}
+      # TZ is UTC in the unit's environment.
+      printf -v now '%(%Y-%m-%dT%H:%M:%SZ)T' -1
 
-      if body=$(jq --raw-input --slurp --compact-output --ascii-output \
-        --arg host ${lib.escapeShellArg config.networking.hostName} \
-        --arg role ${lib.escapeShellArg cfg.role} \
-        --arg time "$now" \
-        --arg uptime "$uptime" \
-        --arg loadavg "$loadavg" \
-        --arg cpu "$cpu" \
-        --arg temp "$temp" \
-        --arg undervoltage "$undervoltage" \
-        --arg mem_total "$mem_total" \
-        --arg mem_available "$mem_available" \
-        --arg disk "$disk" \
-        --arg net "$net" \
-        --arg ping_ip "$ping_ip" \
-        --arg ping "$ping" \
-        --arg public_ip "$public_ip" \
-        --arg tv_link "$tv_link" \
-        --arg tv_speed "$tv_speed" \
-        --arg tv_port_gated "$tv_port_gated" \
-        --arg fallback "$fallback" \
-        --from-file ${./status.jq} <<< "$tailscale"); then
-        reply "200 OK" "$body"
-      else
-        echo "<4>building the status reply failed: jq exited with $?" >&2
-        reply "500 Internal Server Error" '{"schema":1,"error":"building the reply failed"}'
+      uptime="" load1="" load5="" load15="" label=""
+      user="" nice="" system="" idle="" iowait="" irq="" softirq="" steal=""
+      { read -r uptime _; } 2> /dev/null < /proc/uptime || true
+      json_count uptime "''${uptime%.*}"
+      { read -r load1 load5 load15 _; } 2> /dev/null < /proc/loadavg || true
+      json_decimal load1 "$load1"
+      json_decimal load5 "$load5"
+      json_decimal load15 "$load15"
+      { read -r label user nice system idle iowait irq softirq steal _; } 2> /dev/null < /proc/stat || true
+      if [[ $label != cpu ]]; then
+        user="" nice="" system="" idle="" iowait="" irq="" softirq="" steal=""
       fi
+      for tick in user nice system idle iowait irq softirq steal; do
+        json_count "$tick" "''${!tick}"
+      done
+
+      mem_total="" mem_available=""
+      while read -r key value _; do
+        case $key in
+          MemTotal:) mem_total=$value ;;
+          MemAvailable:) mem_available=$value ;;
+        esac
+        if [[ -n $mem_total && -n $mem_available ]]; then break; fi
+      done 2> /dev/null < /proc/meminfo || true
+      json_count mem_total "$mem_total"
+      json_count mem_available "$mem_available"
+
+      # The SoC's, and the Pi firmware's undervoltage alarm, which the driver
+      # polls every 2 seconds. A VM has neither. Millidegrees, to one decimal.
+      type="" millidegrees="" temp=null
+      for zone in /sys/class/thermal/thermal_zone*; do
+        first_line type "$zone/type"
+        if [[ $type == cpu-thermal ]]; then
+          first_line millidegrees "$zone/temp"
+          break
+        fi
+      done
+      if [[ $millidegrees =~ ^(-?)([0-9]{1,9})$ ]]; then
+        tenths=$(((10#''${BASH_REMATCH[2]} + 50) / 100))
+        printf -v temp '%s%d.%d' "''${BASH_REMATCH[1]}" $((tenths / 10)) $((tenths % 10))
+      fi
+      name="" alarm="" undervoltage=null
+      for hwmon in /sys/class/hwmon/hwmon*; do
+        first_line name "$hwmon/name"
+        if [[ $name == rpi_volt ]]; then
+          first_line alarm "$hwmon/in0_lcrit_alarm"
+          break
+        fi
+      done
+      json_flag undervoltage "$alarm"
+
+      # statvfs of the root filesystem: fragment size, blocks, free blocks and
+      # blocks free to non-root.
+      size="" blocks="" free="" avail=""
+      read -r size blocks free avail < <(stat --file-system --format='%S %b %f %a' / 2> /dev/null) || true
+      total_b=null used_b=null avail_b=null
+      # Digit limits keep the products inside bash's 64-bit arithmetic.
+      if [[ $size =~ ^[1-9][0-9]{0,5}$ && $blocks =~ ^[0-9]{1,12}$ ]]; then
+        total_b=$((10#$size * 10#$blocks))
+        if [[ $free =~ ^[0-9]{1,12}$ ]]; then used_b=$((10#$size * (10#$blocks - 10#$free))); fi
+        if [[ $avail =~ ^[0-9]{1,12}$ ]]; then avail_b=$((10#$size * 10#$avail)); fi
+      fi
+
+      net="" rx="" tx=""
+      for interface in ${lib.escapeShellArgs interfaces}; do
+        first_line rx "/sys/class/net/$interface/statistics/rx_bytes"
+        first_line tx "/sys/class/net/$interface/statistics/tx_bytes"
+        json_count rx "$rx"
+        json_count tx "$tx"
+        net+="''${net:+,}\"$interface\":{\"rx_bytes\":$rx,\"tx_bytes\":$tx}"
+      done
+
+      # Written by the exit check as "<checked> <address>".
+      checked="" address="" public_ip=null
+      { read -r checked address _; } 2> /dev/null < ${publicIpCache} || true
+      utc_time='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+      ipv4='^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$'
+      if [[ $checked =~ $utc_time && $address =~ $ipv4 ]]; then
+        printf -v public_ip '{"value":"%s","checked":"%s"}' "$address" "$checked"
+      fi
+
+      # Without an answer from tailscaled there's nothing for jq to read.
+      tunnel=null
+      if [[ -n $tailscale ]]; then
+        if tunnel=$(jq --raw-input --slurp --compact-output --ascii-output \
+          --arg role ${lib.escapeShellArg cfg.role} \
+          --arg ping_ip "$ping_ip" \
+          --arg ping "$ping" \
+          --from-file ${./tunnel.jq} <<< "$tailscale"); then
+          :
+        else
+          echo "<4>building the tunnel list failed: jq exited with $?" >&2
+          reply "500 Internal Server Error" '{"schema":1,"error":"building the reply failed"}'
+          exit 0
+        fi
+      fi
+
+      printf -v body '{"schema":1,"host":%s,"role":%s,"time":"%s","uptime_s":%s,"cpu":{"load":[%s,%s,%s],"stat":{"user":%s,"nice":%s,"system":%s,"idle":%s,"iowait":%s,"irq":%s,"softirq":%s,"steal":%s}},"temp_c":%s,"undervoltage":%s,"undervoltage_events":null,"mem":{"total_kb":%s,"available_kb":%s},"disk":{"total_b":%s,"used_b":%s,"avail_b":%s},"net":{%s},"tunnel":%s,"public_ip":%s,"gateway":%s}' \
+        ${lib.escapeShellArg (builtins.toJSON config.networking.hostName)} \
+        ${lib.escapeShellArg (builtins.toJSON cfg.role)} \
+        "$now" "$uptime" "$load1" "$load5" "$load15" \
+        "$user" "$nice" "$system" "$idle" "$iowait" "$irq" "$softirq" "$steal" \
+        "$temp" "$undervoltage" "$mem_total" "$mem_available" \
+        "$total_b" "$used_b" "$avail_b" "$net" "$tunnel" "$public_ip" "$gateway"
+      reply "200 OK" "$body"
     '';
   };
 
@@ -267,6 +331,14 @@ in
   };
 
   config = {
+    # The script writes the interface names into the reply as they are.
+    assertions = [
+      {
+        assertion = lib.all (name: builtins.match "[A-Za-z0-9_.-]+" name != null) interfaces;
+        message = "The status endpoint reports interfaces by name, which must be letters, digits, '_', '.' or '-': ${toString interfaces}";
+      }
+    ];
+
     systemd.sockets.pi-status = {
       description = "Status endpoint for the tunnel's dashboard";
       wantedBy = [ "sockets.target" ];
