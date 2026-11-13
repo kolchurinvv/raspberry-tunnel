@@ -19,6 +19,11 @@
       "ip": ["tcp:22"]
     },
     {
+      "src": ["tag:exit"],
+      "dst": ["tag:gateway"],
+      "ip": ["tcp:22"]
+    },
+    {
       "src": ["tag:dashboard", "tunnel@"],
       "dst": ["tag:exit", "tag:gateway"],
       "ip": ["tcp:9190"]
