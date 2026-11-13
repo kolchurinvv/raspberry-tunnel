@@ -6,6 +6,7 @@ let
 in
 {
   networking.hostName = "pi-a";
+  tunnel.role = "exit";
 
   services.tailscale.extraSetFlags = [ "--advertise-exit-node" ];
 

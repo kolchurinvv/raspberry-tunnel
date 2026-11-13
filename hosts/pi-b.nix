@@ -125,6 +125,7 @@ let
 in
 {
   networking.hostName = "pi-b";
+  tunnel.role = "gateway";
 
   # Pi B's own address is on the bridge.
   tunnel.wan = "br0";
