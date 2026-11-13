@@ -616,9 +616,11 @@ in
             phone.succeed(f"curl -fsS --max-time 5 http://{destination}/")
         tv_is_kept_off_other_networks()
 
-    with subtest("the phone can reach both Pis' SSH, but Pi B can't reach Pi A's"):
+    with subtest("the phone can reach both Pis' SSH, Pi A can reach Pi B's for the jump, but Pi B can't reach Pi A's"):
         phone.wait_until_succeeds(ssh_port(pi_a_tailnet), timeout=60)
         phone.wait_until_succeeds(ssh_port(pi_b_tailnet), timeout=60)
+        # From apartment A, `ssh -J rt-pi-a rt-pi-b` is the way into Pi B.
+        pi_a.wait_until_succeeds(ssh_port(pi_b_tailnet), timeout=60)
         pi_b.fail(ssh_port(pi_a_tailnet))
 
     with subtest("the dashboard reads both Pis' status over the tailnet, each value as its source has it"):
