@@ -38,6 +38,14 @@
 
       checks.x86_64-linux.tunnel = nixpkgs.legacyPackages.x86_64-linux.testers.runNixOSTest ./tests/tunnel.nix;
 
+      # The public dashboard (D3), for the cluster, whose nodes are all
+      # x86_64: its binary, its image, and a check that runs its Go tests.
+      packages.x86_64-linux.dashboard = nixpkgs.legacyPackages.x86_64-linux.callPackage ./dashboard/package.nix { };
+      packages.x86_64-linux.dashboard-image = nixpkgs.legacyPackages.x86_64-linux.callPackage ./dashboard/image.nix {
+        inherit (self.packages.x86_64-linux) dashboard;
+      };
+      checks.x86_64-linux.dashboard = self.packages.x86_64-linux.dashboard;
+
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = [ 
