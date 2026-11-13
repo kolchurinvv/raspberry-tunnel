@@ -699,6 +699,24 @@ in
         tv_dns_leaves_as(APT_B_ROUTER_WAN)
         # On this path apartment B's router translates the TV's address, not Pi B.
         pi_b.succeed(f"{TV_CONNECTIONS} | grep -v {pi_b_tailnet} | grep -q .")
+        # Pi B still answers the dashboard, within 2 seconds though its ping to Pi A
+        # goes unanswered, with Pi A offline and the TV on fallback.
+        wait_for_status(pi_b_tailnet, lambda reply: [entry["online"] for entry in reply["tunnel"] or []] == [False])
+        reply, seconds = timed_status(pi_b_tailnet)
+        assert seconds < 2, seconds
+        check_status(reply, "pi-b", "gateway", PI_B_INTERFACES)
+        [entry] = reply["tunnel"]
+        assert (entry["peer"], entry["online"], entry["path"], entry["latency_ms"]) == ("pi-a", False, "offline", None), entry
+        assert reply["gateway"]["fallback"] is True, reply["gateway"]
+        check_gateway_against_sources(reply)
+        # Pi B's exit check can't go around the tunnel, so it fails, and the last
+        # result stays.
+        last_check = reply["public_ip"]
+        assert last_check is not None and last_check["value"] == PI_A, last_check
+        since = pi_b.succeed("date +%s").strip()
+        pi_b.succeed("systemctl start pi-exit-check")
+        pi_b.succeed(f"journalctl -u pi-exit-check --since @{since} -o cat | grep -q 'site didn.t answer'")
+        assert status(pi_b_tailnet)["public_ip"] == last_check
         pi_a.succeed("systemctl start tailscaled")
         site_sees_tv_as(PI_A)
         pi_b.wait_until_fails(f"{TV_CONNECTIONS} | grep -v {pi_b_tailnet} | grep -q .", timeout=10)
@@ -722,6 +740,14 @@ in
         pi_b.succeed("systemctl stop tailscaled")
         site_sees_tv_as(APT_B_ROUTER_WAN)
         tv_is_kept_off_other_networks()
+        # Asked on Pi B itself, as the tailnet is gone: what tailscaled would have
+        # said is null, and the rest is still there.
+        reply = json.loads(pi_b.succeed("curl -fsS --max-time 5 http://127.0.0.1:9190/status"))
+        assert reply["schema"] == 1 and reply["tunnel"] is None and reply["gateway"]["fallback"] is True, reply
+        check_gateway_against_sources(reply)
+        tailscale0 = pi_b.execute("ip link show tailscale0")[0] == 0
+        assert all((value is not None) == tailscale0 for value in reply["net"]["tailscale0"].values()), (tailscale0, reply["net"])
+        assert all(is_count(value) for value in reply["net"]["br0"].values()), reply["net"]
         pi_b.succeed("systemctl start tailscaled")
         site_sees_tv_as(PI_A)
 
@@ -777,13 +803,36 @@ in
         pi_b.succeed("systemctl stop nftables")
         pi_b.succeed("ip link show eth2 | grep -q 'state DOWN'")
         tv.fail(FIND_WEB)
+        # tv-port-gate stops with nftables, so the dashboard sees the port ungated.
+        reply = wait_for_status(pi_b_tailnet, lambda reply: reply["gateway"]["tv_port_gated"] is False, timeout=10)
+        assert reply["gateway"]["tv_port"]["link"] is False, reply["gateway"]
+        check_gateway_against_sources(reply)
         pi_b.succeed("systemctl start nftables")
         site_sees_tv_as(PI_A, timeout=60)
         tv_and_phone_reach_each_other()
+        reply = wait_for_status(pi_b_tailnet, lambda reply: reply["gateway"]["tv_port_gated"] is True, timeout=10)
+        check_gateway_against_sources(reply)
 
     with subtest("the site saw only Pi A from Pi B's power cut on, and never anything but Pi A or apartment B's connection"):
         site_only_saw_pi_a_since(before_pi_b_power_cut)
         web.fail(f"journalctl -u whoami -o cat | grep -E '^[0-9.]+ ' | grep -v -e '^{PI_A} ' -e '^{APT_B_ROUTER_WAN} ' | grep -q .")
+
+    with subtest("the dashboard sees TV B's port ungated once its bridge rules are gone, and gated once they're back"):
+        pi_b.succeed("nft delete table bridge tv-port")
+        # tv-port-gate, still running, finds the rule gone and takes the port down.
+        wait_for_status(pi_b_tailnet, lambda reply: reply["gateway"]["tv_port_gated"] is False, timeout=10)
+        pi_b.succeed("systemctl is-active tv-port-gate")
+        pi_b.wait_until_succeeds("ip link show eth2 | grep -q 'state DOWN'", timeout=10)
+        reply = wait_for_status(pi_b_tailnet, lambda reply: reply["gateway"]["tv_port"]["link"] is False, timeout=10)
+        check_gateway_against_sources(reply)
+        # Loading Pi B's tables again brings the rule back, then the port and the
+        # TV's tunnel.
+        pi_b.succeed("systemctl reload nftables")
+        reply = wait_for_status(
+            pi_b_tailnet, lambda reply: reply["gateway"]["tv_port_gated"] is True and reply["gateway"]["tv_port"]["link"] is True, timeout=30
+        )
+        check_gateway_against_sources(reply)
+        site_sees_tv_as(PI_A, timeout=60)
 
     with subtest("the Pi A check above really depends on Pi A's firewall"):
         pi_a.succeed("nft delete table inet tunnel-exit")
