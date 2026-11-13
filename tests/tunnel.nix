@@ -1,7 +1,8 @@
 # Runs the real Pi A and Pi B roles in VMs against a real Headscale, and checks
 # where TV B's traffic goes. VLAN 1 stands in for the internet plus apartment A's
 # LAN, VLAN 2 for apartment B's network behind its router, and VLAN 3 for the
-# cable between Pi B and the TV.
+# cable between Pi B and the TV. The site on the internet is also the dashboard,
+# which reads both Pis' status endpoint over the tailnet (D2).
 #
 # It doesn't cover CGNAT or the Pi hardware.
 { lib, pkgs, ... }:
@@ -115,6 +116,9 @@ let
     # Any public range will do: the secure VLAN's stand-in, which the private
     # ranges in modules/local-nets.nix don't cover.
     tunnel.extraLocalNets = [ "5.5.5.0/29" ];
+    # The site's own whoami for the exit check, apart from the one the TV's checks
+    # read.
+    tunnel.publicIpUrl = "http://203.0.113.1:8080/";
     security.pki.certificateFiles = [ "${tlsCert}/cert.pem" ];
     environment.systemPackages = [ pkgs.conntrack-tools pkgs.curl ];
   };
@@ -240,7 +244,10 @@ in
       environment.systemPackages = [ pkgs.curl ];
     };
 
-    # A site on the internet, and the way out to it for apartment B's router.
+    # A site on the internet, and the way out to it for apartment B's router. Also
+    # the dashboard, a tailnet node tagged tag:dashboard, which reads the Pis'
+    # status from the internet as the real one will. Being last in alphabetical
+    # order, it renumbers no other node.
     web = {
       virtualisation.vlans = [ 1 ];
       networking.interfaces.eth1.ipv4.addresses = [
@@ -257,9 +264,15 @@ in
           prefixLength = 24;
         }
       ];
-      networking.firewall.allowedTCPPorts = [ 80 ];
+      networking.firewall.allowedTCPPorts = [ 80 8080 ];
       networking.firewall.allowedUDPPorts = [ 53 ];
       systemd.services.whoami = whoamiService 80;
+      # For the Pis' exit checks. A log of its own keeps their requests out of
+      # the one the TV's checks read.
+      systemd.services.exit-check-site = whoamiService 8080;
+      services.tailscale.enable = true;
+      security.pki.certificateFiles = [ "${tlsCert}/cert.pem" ];
+      environment.systemPackages = [ pkgs.curl ];
       systemd.services.dns-whoami = {
         wantedBy = [ "multi-user.target" ];
         # It binds to one of the addresses that service adds.
@@ -399,6 +412,12 @@ in
         pi_a.succeed("systemctl restart tailscaled-set")
         pi_a_tailnet = pi_a.succeed("tailscale ip -4").strip()
         pi_b_tailnet = pi_b.succeed("tailscale ip -4").strip()
+
+    with subtest("the dashboard joins the tailnet"):
+        key = headscale.succeed("headscale preauthkeys create --tags tag:dashboard").strip()
+        web.wait_for_unit("tailscaled")
+        # Its resolver stays its own.
+        web.succeed(f"tailscale login --login-server=https://headscale --auth-key={key} --accept-dns=false")
 
     with subtest("the TV gets its address from apartment B's router through Pi B, and no IPv6"):
         tv.wait_until_succeeds(f"ip -4 route show default | grep -q 'via {APT_B_ROUTER_LAN} '")
