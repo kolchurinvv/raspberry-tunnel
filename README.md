@@ -30,14 +30,14 @@ between them, but traffic never exits there.
 
 | Piece | State |
 |---|---|
-| Pi A config (`hosts/pi-a.nix`, `modules/`) | Passes the VM test. Runs on a real Pi, has joined Headscale, and serves as Pi B's exit node |
-| Pi B config (`hosts/pi-b.nix`, `modules/`) | Passes the VM test. Runs on a real Pi in apartment B, with TV B bridged onto the combo unit's network through its USB adapter. TV B's traffic goes through the tunnel, which reached Pi A over a direct path rather than a relay, and websites see apartment A's address. Apartment B's network hands out IPv6, and TV B gets none. Casting from a phone on apartment B's Wi-Fi works. Before moving, it was tried in apartment A on the default VLAN, where streaming, casting from an app and screen mirroring all worked, on Pi B's own connection and through the tunnel |
+| Pi A config (`hosts/pi-a.nix`, `modules/`) | Passes the VM test. Runs on a real Pi, has joined Headscale, and serves as Pi B's exit node. Updated on 2026-11-13: it serves the status endpoint, and its firewall also blocks the ranges in `private/extra-local-nets.nix` |
+| Pi B config (`hosts/pi-b.nix`, `modules/`) | Passes the VM test. Runs on a real Pi in apartment B, with TV B bridged onto the combo unit's network through its USB adapter. TV B's traffic goes through the tunnel, which reached Pi A over a direct path rather than a relay, and websites see apartment A's address. Apartment B's network hands out IPv6, and TV B gets none. Casting from a phone on apartment B's Wi-Fi works. Before moving, it was tried in apartment A on the default VLAN, where streaming, casting from an app and screen mirroring all worked, on Pi B's own connection and through the tunnel. Updated on 2026-11-13: it serves the status endpoint, and its firewall also blocks the ranges in `private/extra-local-nets.nix`. Its exit check sees the same public address as Pi A's |
 | Headscale policy (`headscale/policy.json`) | Passes the VM test |
 | Headscale server | Runs as a second Headscale on an existing server, set up by hand. Its config isn't in this repository |
 | SD card images | Both built and flashed |
-| Public health dashboard (`docs/decisions/D2-public-dashboard-pulls-from-the-pis.md`) | Designed. Not built yet: next come the Pis' status endpoint, then the dashboard, one Go binary (`docs/decisions/D3-dashboard-is-one-go-binary.md`) deployed on the user's cluster |
+| Public health dashboard (`docs/decisions/D2-public-dashboard-pulls-from-the-pis.md`) | Designed, and both its parts are built: the dashboard program, one Go binary (`docs/decisions/D3-dashboard-is-one-go-binary.md`) for the user's cluster, and the Pis' status endpoint, which runs on both Pis. The next two rows give each one's state |
 | Dashboard program (`dashboard/`, D3) | Built: one Go binary, with its image (`.#dashboard-image`, amd64) and a check that runs its Go tests (`.#checks.x86_64-linux.dashboard`). The tests pass, including those that no address or private name reaches the page and that every route is `/` or under `/_dash/`. Dev mode runs it with fake Pis (`dashboard/README.md`). Not yet run against the real Headscale, the Pis' endpoint or the cluster, and not deployed |
-| Pis' status endpoint for the dashboard (`modules/status.nix`, D2) | Written: each Pi serves its status on the tailnet (see [Status endpoint](#status-endpoint)), and the Headscale policy lets the dashboard and your own devices read it. It evaluates, but hasn't run in the VM test or on the Pis yet, and neither have the changes it makes to both Pis' configs and the policy |
+| Pis' status endpoint for the dashboard (`modules/status.nix`, D2) | Passes the VM test, which also logs what a request costs. Runs on both Pis since they were updated on 2026-11-13: each serves its status on the tailnet (see [Status endpoint](#status-endpoint)), and the Headscale policy lets the dashboard and your own devices read it |
 | Waking the workstation from the phone through Pi A | Not started, secondary to the tunnel |
 
 ## Testing
@@ -67,7 +67,8 @@ machine, run it under the box's lock, as `private/gate.md` describes for the VM 
 All the steps below have been run on real hardware. Pi B was set up in
 apartment A, running steps 1 to 5 before it bridged its TV port, then moved to
 apartment B, where step 9 passed. Passing
-`private/extra-local-nets.nix` to a build is newer, and has only been evaluated.
+`private/extra-local-nets.nix` to a build is newer: both Pis were updated to builds
+made with it on 2026-11-13, rather than set up from scratch with it.
 
 1. Give each Pi an SSH key pair of its own, and keep the keys outside this repository,
    which may become public. Every Pi build takes its Pi's public key on the command
