@@ -31,7 +31,7 @@ var t0 = time.Date(2026, 11, 13, 20, 0, 0, 0, time.UTC)
 type fakePi struct {
 	mu     sync.Mutex
 	status map[string]any
-	mode   string // "", "slow", "500", "garbage", "text", "schema2", "huge"
+	mode   string // "", "slow", "500", "garbage", "text", "schema2", "huge", "redirect"
 }
 
 func (f *fakePi) set(fn func(m map[string]any)) {
@@ -81,6 +81,9 @@ func (f *fakePi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "schema2":
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"schema": 2, "host": "pi-b"}`))
+		return
+	case "redirect":
+		http.Redirect(w, r, "http://203.0.113.50/status", http.StatusFound)
 		return
 	case "huge":
 		w.Header().Set("Content-Type", "application/json")
@@ -339,6 +342,7 @@ func TestCycleFailures(t *testing.T) {
 		{"garbage", nil, model.OutcomeInvalid, 0},
 		{"text", nil, model.OutcomeInvalid, 0},
 		{"huge", nil, model.OutcomeInvalid, 0},
+		{"redirect", nil, model.OutcomeHTTPError, 0},
 		{"schema2", nil, model.OutcomeSchema, 2},
 		{"refused", func(r *rig) { r.routes["100.101.102.2:9190"] = closedPort(r.t) }, model.OutcomeUnreachable, 0},
 		{"offline", func(r *rig) {

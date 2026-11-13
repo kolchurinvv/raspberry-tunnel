@@ -210,6 +210,11 @@ func New(opt Options) *Collector {
 	if opt.Now == nil {
 		opt.Now = time.Now
 	}
+	// A Pi never redirects: a 3xx is an answer with an error, not somewhere
+	// else to go. The copy leaves the caller's client as it was.
+	client := *opt.Client
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	opt.Client = &client
 	return &Collector{opt: opt, states: map[string]model.HostState{}, counters: map[string]counters{},
 		snap: Snapshot{Tailnet: TailnetStarting}}
 }
