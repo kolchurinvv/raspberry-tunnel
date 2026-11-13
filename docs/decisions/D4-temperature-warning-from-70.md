@@ -3,7 +3,9 @@
 - **Date:** 2026-11-13
 - **Status:** accepted; amends D2 and D3 (the temperature at which the gauge
   turns amber and the banner warns)
-- **Decided by:** the user, on 2026-11-13: "raise it to 70".
+- **Decided by:** the user, on 2026-11-13: "raise it to 70". The agent proposed
+  keeping the chart's line at 60 °C when it took the ruling. The banner's
+  wording and the rounding to whole degrees are the agent's.
 
 ## Context
 
@@ -21,11 +23,13 @@ warning that never clears hides the ones that matter.
 
 - **The warning starts at 70 °C.** From there the temperature gauge turns amber
   and the banner warns that the Pi "is running hot". This is `TempHot` in
-  `dashboard/internal/view/view.go`.
+  `dashboard/internal/view/view.go`. It's judged on the whole degree the page
+  shows, so a Pi shown at 70 °C is always warned about, even at 69.5 °C.
 - **The chart keeps its line at 60 °C**, labelled as where the Pi lowers its
   clock (`TempClock`). The line states a hardware fact, not an alarm.
 - **The banner's text gives both temperatures:** the Pi lowers its clock from
-  60 °C and slows further as it nears 85 °C, its hard limit.
+  60 °C and slows further as it nears 85 °C, its hard limit (`TempLimit`,
+  apart from the gauge's scale).
 - **The gauge's scale stays 20–85 °C.**
 
 So D2's banner rule and D3's Warning row read "at 70 °C or above" where they
@@ -46,6 +50,8 @@ line at 60 °C is unchanged.
 
 `checks.x86_64-linux.dashboard` runs the view tests:
 
-- `TestBanner`: 70.0 °C warns; 69.9 °C and 61.0 °C are "All good".
-- `TestGauges`: 70 °C is amber; 69.9 °C isn't.
-- `TestChartsShape`: the temperature chart's line is labelled 60 °C.
+- `TestBanner`: 70.0 °C and 69.5 °C warn; 69.4 °C and 61.0 °C are "All good".
+- `TestHotBannerText`: the warning names 60 °C and 85 °C.
+- `TestGauges`: 70 °C and 69.5 °C are amber; 69.4 °C isn't.
+- `TestChartsShape`: the temperature chart's line is labelled 60 °C and drawn
+  at 60 °C.
