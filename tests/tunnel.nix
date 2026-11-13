@@ -116,9 +116,10 @@ let
     # Any public range will do: the secure VLAN's stand-in, which the private
     # ranges in modules/local-nets.nix don't cover.
     tunnel.extraLocalNets = [ "5.5.5.0/29" ];
-    # The site's own whoami for the exit check, apart from the one the TV's checks
-    # read.
-    tunnel.publicIpUrl = "http://203.0.113.1:8080/";
+    # The exit check's sites. The first is a port with nothing listening, so the
+    # check falls back to the second, the site's own whoami for it, apart from
+    # the one the TV's checks read.
+    tunnel.publicIpUrls = [ "http://203.0.113.1:8081/" "http://203.0.113.1:8080/" ];
     security.pki.certificateFiles = [ "${tlsCert}/cert.pem" ];
     environment.systemPackages = [ pkgs.conntrack-tools pkgs.curl ];
   };
@@ -264,7 +265,9 @@ in
           prefixLength = 24;
         }
       ];
-      networking.firewall.allowedTCPPorts = [ 80 8080 ];
+      # 8081 is open with nothing behind it, so the Pis' first exit check site is
+      # refused at once rather than left to time out.
+      networking.firewall.allowedTCPPorts = [ 80 8080 8081 ];
       networking.firewall.allowedUDPPorts = [ 53 ];
       systemd.services.whoami = whoamiService 80;
       # For the Pis' exit checks. A log of its own keeps their requests out of
@@ -685,7 +688,12 @@ in
         for machine, address in ((pi_a, pi_a_tailnet), (pi_b, pi_b_tailnet)):
             machine.succeed("systemctl is-active pi-exit-check.timer")
             machine.succeed("systemctl show -P TimersMonotonic pi-exit-check.timer | grep -q 'OnUnitActiveUSec=5min'")
+            since, site_since = machine.succeed("date +%s").strip(), web.succeed("date +%s").strip()
             machine.succeed("systemctl start pi-exit-check")
+            # The first site refused it, and the second, the fallback, answered, seeing
+            # Pi A's address.
+            machine.succeed(f"journalctl -u pi-exit-check --since @{since} -o cat | grep -q 'site 2 of 2 answered; site 1 of 2 didn.t answer'")
+            web.succeed(f"journalctl -u exit-check-site --since @{site_since} -o cat | grep -q '^{PI_A} '")
             just_now = machine.succeed("date -u -d '-60 sec' +%Y-%m-%dT%H:%M:%SZ").strip()
             public_ip = status(address)["public_ip"]
             assert public_ip is not None and public_ip["value"] == PI_A and public_ip["checked"] >= just_now, (machine.name, public_ip)
@@ -728,7 +736,7 @@ in
         assert last_check is not None and last_check["value"] == PI_A, last_check
         since = pi_b.succeed("date +%s").strip()
         pi_b.succeed("systemctl start pi-exit-check")
-        pi_b.succeed(f"journalctl -u pi-exit-check --since @{since} -o cat | grep -q 'site didn.t answer'")
+        pi_b.succeed(f"journalctl -u pi-exit-check --since @{since} -o cat | grep -q 'no site answered'")
         assert status(pi_b_tailnet)["public_ip"] == last_check
         pi_a.succeed("systemctl start tailscaled")
         site_sees_tv_as(PI_A)

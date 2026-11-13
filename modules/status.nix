@@ -320,31 +320,44 @@ let
   # through its normal routing, so Pi B's goes through Pi A while the tunnel
   # works. The dashboard compares the Pis' answers. It runs from its timer,
   # never while a request waits, and caches "<checked> <address>" for the
-  # endpoint. A failed check leaves the last result as it was, and the address
-  # never goes to the journal.
+  # endpoint. It tries the sites in tunnel.publicIpUrls in order, each with a
+  # deadline of its own, until one answers with an IPv4 address. If none does,
+  # the last result stays as it was. The journal names a site only by its place
+  # in the list, and never gets its answer or the address.
+  #
+  # 5 seconds a site, and at most 5 sites (an assertion below), so the whole run
+  # ends inside the unit's 30 seconds.
+  attemptSeconds = 5;
   exitCheck = pkgs.writeShellApplication {
     name = "pi-exit-check";
     runtimeInputs = [ pkgs.coreutils pkgs.curlMinimal ];
     text = ''
       # IPv4 only: Pi A forwards only IPv4, so it's the one address the Pis can
       # compare.
-      status=0
-      answer=$(curl --ipv4 --silent --fail --max-time 10 --max-filesize 64 --proto =http,https \
-        ${lib.escapeShellArg cfg.publicIpUrl}) || status=$?
-      if ((status != 0)); then
-        echo "<4>the exit check's site didn't answer (curl exited with $status), so the last result stays" >&2
-        exit 0
-      fi
-      address=''${answer//[$' \t\r\n']/}
+      sites=(${lib.escapeShellArgs cfg.publicIpUrls})
       ipv4='^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$'
-      if [[ ! $address =~ $ipv4 ]]; then
-        echo "<4>the exit check's site didn't answer with an IPv4 address, so the last result stays" >&2
-        exit 0
-      fi
-      # TZ is UTC in the unit's environment.
-      printf -v checked '%(%Y-%m-%dT%H:%M:%SZ)T' -1
-      printf '%s %s\n' "$checked" "$address" > ${publicIpCache}.new
-      mv -f ${publicIpCache}.new ${publicIpCache}
+      failures=""
+      for ((n = 1; n <= ''${#sites[@]}; n++)); do
+        status=0
+        answer=$(curl --ipv4 --silent --fail --max-time ${toString attemptSeconds} --max-filesize 64 \
+          --proto =http,https "''${sites[n - 1]}") || status=$?
+        address=''${answer//[$' \t\r\n']/}
+        if ((status != 0)); then
+          failures+="; site $n of ''${#sites[@]} didn't answer (curl exited with $status)"
+        elif [[ ! $address =~ $ipv4 ]]; then
+          failures+="; site $n of ''${#sites[@]} didn't answer with an IPv4 address"
+        else
+          # TZ is UTC in the unit's environment.
+          printf -v checked '%(%Y-%m-%dT%H:%M:%SZ)T' -1
+          printf '%s %s\n' "$checked" "$address" > ${publicIpCache}.new
+          mv -f ${publicIpCache}.new ${publicIpCache}
+          if [[ -n $failures ]]; then
+            echo "<5>site $n of ''${#sites[@]} answered$failures" >&2
+          fi
+          exit 0
+        fi
+      done
+      echo "<4>no site answered with an address, so the last result stays$failures" >&2
     '';
   };
 in
@@ -354,16 +367,21 @@ in
       type = lib.types.enum [ "exit" "gateway" ];
       description = "What this Pi does in the tunnel: the exit node, or a gateway that sends its TV's traffic through the exit node.";
     };
-    publicIpUrl = lib.mkOption {
-      type = lib.types.str;
-      default = "https://ipv4.icanhazip.com/";
-      description = "Page that answers with the IPv4 address it sees, as plain text. The exit check fetches it every 5 minutes through the Pi's normal routing, so the site sees each Pi's public address.";
+    publicIpUrls = lib.mkOption {
+      type = lib.types.nonEmptyListOf lib.types.str;
+      default = [ "https://ipv4.icanhazip.com/" "https://checkip.amazonaws.com/" ];
+      description = "Pages that answer with the IPv4 address they see, as plain text, tried in order until one does: by default Cloudflare's, then Amazon's if it fails. The exit check fetches them every 5 minutes through the Pi's normal routing, so every site it reaches sees the Pi's public address. At most 5.";
     };
   };
 
   config = {
-    # The script writes the interface names into the reply as they are.
     assertions = [
+      # At 5 seconds each, the exit check's run stays inside its unit's 30.
+      {
+        assertion = builtins.length cfg.publicIpUrls <= 5;
+        message = "tunnel.publicIpUrls takes at most 5 sites: the exit check gives each 5 seconds, inside its 30.";
+      }
+      # The script writes the interface names into the reply as they are.
       {
         assertion = lib.all (name: builtins.match "[A-Za-z0-9_.-]+" name != null) interfaces;
         message = "The status endpoint reports interfaces by name, which must be letters, digits, '_', '.' or '-': ${toString interfaces}";
@@ -465,8 +483,8 @@ in
       serviceConfig = {
         Type = "oneshot";
         ExecStart = lib.getExe exitCheck;
-        # Its own deadline, beyond curl's 10 seconds and well inside the timer's 5
-        # minutes.
+        # Its own deadline, beyond the sites' 5 seconds each and well inside the
+        # timer's 5 minutes.
         TimeoutStartSec = "30s";
         # A user of its own rather than a DynamicUser: with one, systemd keeps a
         # preserved runtime directory under /run/private, where the status
