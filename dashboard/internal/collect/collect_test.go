@@ -488,6 +488,13 @@ func TestLoadAfterRestart(t *testing.T) {
 	r.gw.setMode("500")
 	r.col = again
 	r.col.Cycle(ctx, t0) // the same slot: skipped
+	// Skipped, but with this poll's tailnet view: the page shouldn't lose the
+	// nodes for a slot.
+	for _, p := range r.col.Snapshot().Pis {
+		if !p.Tailnet.Known || !p.Tailnet.Online {
+			t.Errorf("%s after a skipped slot: tailnet %+v", p.Host, p.Tailnet)
+		}
+	}
 	r.col.Cycle(ctx, t0.Add(30*time.Second))
 	if got := r.events(); len(got) != 1 || got[0] != "pi-b:unreachable:http_error" {
 		t.Errorf("events after restart = %q", got)

@@ -393,9 +393,12 @@ func (c *Collector) Cycle(ctx context.Context, ts time.Time) {
 	for _, a := range answers {
 		prev, seen := c.states[a.peer.Host]
 		if seen && !ts.After(prev.LastTS) {
-			// Already polled in this slot, before a restart.
+			// Already polled in this slot, before a restart: keep that answer,
+			// but with this poll's tailnet view, which a restart doesn't store.
 			if old := c.findPi(a.peer.Host); old != nil {
-				pis = append(pis, *old)
+				p := *old
+				p.Tailnet = tailnetOf(a.peer)
+				pis = append(pis, p)
 			}
 			continue
 		}
@@ -416,9 +419,7 @@ func (c *Collector) Cycle(ctx context.Context, ts time.Time) {
 		events = append(events, evs...)
 		states = append(states, next)
 
-		p := Pi{Host: s.Host, Role: s.Role, Latest: s, State: next, Tailnet: Tailnet{
-			Known: true, Online: a.peer.Online, LastSeen: a.peer.LastSeen, KeyExpiry: a.peer.KeyExpiry,
-		}}
+		p := Pi{Host: s.Host, Role: s.Role, Latest: s, State: next, Tailnet: tailnetOf(a.peer)}
 		if s.OK() {
 			ok := s
 			p.LastOK = &ok
@@ -740,4 +741,8 @@ func tunnelCounters(role model.Role, tunnels []schema.Tunnel) map[string]uint64 
 		out[peer] = p.sum
 	}
 	return out
+}
+
+func tailnetOf(p Peer) Tailnet {
+	return Tailnet{Known: true, Online: p.Online, LastSeen: p.LastSeen, KeyExpiry: p.KeyExpiry}
 }
