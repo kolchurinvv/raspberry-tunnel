@@ -221,7 +221,9 @@ the same for `b`). The dashboard joins with a key from
   doesn't, don't connect.
 - **Heat and power:** the config sets up no fan control for the PoE HAT. With all four
   cores busy for 5 minutes, Pi A settled at about 65 °C with no undervoltage warnings.
-  It hasn't been measured carrying tunnel traffic.
+  It hasn't been measured carrying tunnel traffic. In its enclosure next to a network
+  switch, Pi A idles at about 61 °C (2026-11-13), and Pi B at about 55 °C. The
+  dashboard warns from 70 °C (D4).
 - **The clock:** a Pi has no battery-backed clock, so it can start with the wrong date
   until it reaches the network. Pi A's first boot logged 17 March, and a reboot had the
   right time within a minute. Log entries from early in a boot can show the wrong date.
