@@ -179,8 +179,9 @@ the same for `b`). The dashboard joins with a key from
 
 - **Changing a Pi's config:** there's no need to re-flash. `just update-nix-on a`
   builds the new system on the workstation, copies it to the Pi over SSH and installs
-  it for the Pi's next boot. `just reboot-pi a` then reboots into it. To switch to it
-  at once instead, without just:
+  it for the Pi's next boot. `just reboot-pi a` then reboots into it. `just
+  switch-nix-on a` switches to it at once instead. For Pi B, the recipes jump
+  through Pi A by themselves (see below). To switch without just:
   ```sh
   NIX_SSHOPTS="-i <key>" nixos-rebuild switch --flake '.#pi-a' --target-host root@<ip> \
     --no-reexec --override-input admin-key path:/absolute/path/to/pi-a.pub \
@@ -197,9 +198,10 @@ the same for `b`). The dashboard joins with a key from
   into the tunnel, and Pi A drops those bound for private ranges. Once Pi B is in
   apartment B, the tailnet is the only way in from apartment A. The Headscale
   policy lets Pi A reach Pi B's SSH over it, and nothing else. In `~/.ssh/config`,
-  give `rt-pi-b` Pi B's tailnet address (`tailscale ip -4` on Pi B) and
-  `ProxyJump rt-pi-a`. Then `ssh rt-pi-b` and the justfile's recipes go through
-  Pi A, with your key staying on the workstation.
+  give `rt-pi-b` Pi B's tailnet address (`tailscale ip -4` on Pi B). The justfile's
+  recipes for Pi B then jump through `rt-pi-a` themselves, with your key staying on
+  the workstation. For a plain `ssh rt-pi-b`, add `ProxyJump rt-pi-a` to that
+  entry too, or use `ssh -J rt-pi-a rt-pi-b`.
 - **Heat and power:** the config sets up no fan control for the PoE HAT. With all four
   cores busy for 5 minutes, Pi A settled at about 65 °C with no undervoltage warnings.
   It hasn't been measured carrying tunnel traffic.
