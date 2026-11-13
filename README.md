@@ -144,7 +144,8 @@ systemd starts one short-lived, unprivileged script per connection, which reads
 sends one disco ping to the exit node. The VM test logs what a request costs.
 
 From one of your own devices on the tailnet, with the Pi's tailnet address, which
-`tailscale ip -4` prints on the Pi:
+`tailscale status` lists on that device, and `headscale nodes list` on the
+Headscale server:
 
 ```sh
 curl -s http://<pi-tailnet-address>:9190/status | jq .
@@ -197,11 +198,18 @@ the same for `b`). The dashboard joins with a key from
   apartment A's default VLAN, or over the tailnet. Its replies to anywhere else go
   into the tunnel, and Pi A drops those bound for private ranges. Once Pi B is in
   apartment B, the tailnet is the only way in from apartment A. The Headscale
-  policy lets Pi A reach Pi B's SSH over it, and nothing else. In `~/.ssh/config`,
-  give `rt-pi-b` Pi B's tailnet address (`tailscale ip -4` on Pi B). The justfile's
-  recipes for Pi B then jump through `rt-pi-a` themselves, with your key staying on
-  the workstation. For a plain `ssh rt-pi-b`, add `ProxyJump rt-pi-a` to that
-  entry too, or use `ssh -J rt-pi-a rt-pi-b`.
+  policy lets Pi A reach Pi B's SSH over it, and nothing else, so load
+  `headscale/policy.json` on the Headscale server first: until the server has
+  that grant, Pi A can't reach Pi B. In `~/.ssh/config`, give `rt-pi-b` Pi B's
+  tailnet address. Pi B can't tell you that yet, as you can't reach it, so take
+  it from `headscale nodes list` on the Headscale server, or `tailscale status` on
+  Pi A. The justfile's recipes for Pi B then jump through `rt-pi-a` themselves,
+  with your key staying on the workstation. For a plain `ssh rt-pi-b`, add
+  `ProxyJump rt-pi-a` to that entry too, or use `ssh -J rt-pi-a rt-pi-b`. The first
+  connection asks you to trust Pi B's host key under its new address. Its
+  fingerprint should match the one you accepted for Pi B's address on the
+  apartment's network, which `ssh-keygen -lF <that address>` prints. If it
+  doesn't, don't connect.
 - **Heat and power:** the config sets up no fan control for the PoE HAT. With all four
   cores busy for 5 minutes, Pi A settled at about 65 °C with no undervoltage warnings.
   It hasn't been measured carrying tunnel traffic.
