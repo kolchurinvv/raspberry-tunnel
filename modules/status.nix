@@ -220,11 +220,50 @@ let
       fi
     '';
   };
+
+  # The exit check: which public address this Pi's own traffic leaves from,
+  # through its normal routing, so Pi B's goes through Pi A while the tunnel
+  # works. The dashboard compares the Pis' answers. It runs from its timer,
+  # never while a request waits, and caches "<checked> <address>" for the
+  # endpoint. A failed check leaves the last result as it was, and the address
+  # never goes to the journal.
+  exitCheck = pkgs.writeShellApplication {
+    name = "pi-exit-check";
+    runtimeInputs = [ pkgs.coreutils pkgs.curlMinimal ];
+    text = ''
+      # IPv4 only: Pi A forwards only IPv4, so it's the one address the Pis can
+      # compare.
+      status=0
+      answer=$(curl --ipv4 --silent --fail --max-time 10 --max-filesize 64 --proto =http,https \
+        ${lib.escapeShellArg cfg.publicIpUrl}) || status=$?
+      if ((status != 0)); then
+        echo "<4>the exit check's site didn't answer (curl exited with $status), so the last result stays" >&2
+        exit 0
+      fi
+      address=''${answer//[$' \t\r\n']/}
+      ipv4='^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$'
+      if [[ ! $address =~ $ipv4 ]]; then
+        echo "<4>the exit check's site didn't answer with an IPv4 address, so the last result stays" >&2
+        exit 0
+      fi
+      # TZ is UTC in the unit's environment.
+      printf -v checked '%(%Y-%m-%dT%H:%M:%SZ)T' -1
+      printf '%s %s\n' "$checked" "$address" > ${publicIpCache}.new
+      mv -f ${publicIpCache}.new ${publicIpCache}
+    '';
+  };
 in
 {
-  options.tunnel.role = lib.mkOption {
-    type = lib.types.enum [ "exit" "gateway" ];
-    description = "What this Pi does in the tunnel: the exit node, or a gateway that sends its TV's traffic through the exit node.";
+  options.tunnel = {
+    role = lib.mkOption {
+      type = lib.types.enum [ "exit" "gateway" ];
+      description = "What this Pi does in the tunnel: the exit node, or a gateway that sends its TV's traffic through the exit node.";
+    };
+    publicIpUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "https://ipv4.icanhazip.com/";
+      description = "Page that answers with the IPv4 address it sees, as plain text. The exit check fetches it every 5 minutes through the Pi's normal routing, so the site sees each Pi's public address.";
+    };
   };
 
   config = {
@@ -296,5 +335,72 @@ in
     # Like SSH in modules/common.nix: the tailnet only, never the TV's port or
     # either apartment's network.
     networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ port ];
+
+    systemd.timers.pi-exit-check = {
+      description = "Check this Pi's public address every 5 minutes";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnBootSec = "1min";
+        OnUnitActiveSec = "5min";
+        AccuracySec = "1s";
+      };
+    };
+
+    systemd.services.pi-exit-check = {
+      description = "Check which public address this Pi's traffic leaves from";
+      environment = {
+        LC_ALL = "C";
+        TZ = "UTC0";
+      };
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = lib.getExe exitCheck;
+        # Its own deadline, beyond curl's 10 seconds and well inside the timer's 5
+        # minutes.
+        TimeoutStartSec = "30s";
+        # A user of its own rather than a DynamicUser: with one, systemd keeps a
+        # preserved runtime directory under /run/private, where the status
+        # endpoint's user couldn't read it. Kept between runs for the endpoint,
+        # and gone at boot, so the endpoint reports null until the first check.
+        User = "pi-exit-check";
+        Group = "pi-exit-check";
+        RuntimeDirectory = "pi-exit-check";
+        RuntimeDirectoryPreserve = true;
+        RuntimeDirectoryMode = "0755";
+        UMask = "0022";
+        Nice = 10;
+
+        # It only needs to reach the site: IP, and AF_UNIX for name lookups
+        # through nscd. No capabilities, and nothing writable but its directory.
+        CapabilityBoundingSet = "";
+        NoNewPrivileges = true;
+        RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
+        PrivateDevices = true;
+        PrivateTmp = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        ProtectClock = true;
+        ProtectControlGroups = true;
+        ProtectHostname = true;
+        ProtectKernelLogs = true;
+        ProtectKernelModules = true;
+        ProtectKernelTunables = true;
+        ProtectProc = "invisible";
+        RestrictNamespaces = true;
+        RestrictRealtime = true;
+        RestrictSUIDSGID = true;
+        LockPersonality = true;
+        MemoryDenyWriteExecute = true;
+        SystemCallArchitectures = "native";
+        SystemCallFilter = [ "@system-service" "~@privileged" ];
+      };
+    };
+
+    users.users.pi-exit-check = {
+      isSystemUser = true;
+      group = "pi-exit-check";
+      description = "Exit check for the tunnel's status endpoint";
+    };
+    users.groups.pi-exit-check = { };
   };
 }
