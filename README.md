@@ -55,6 +55,10 @@ tunnel fails, and recovery after a power cut, the TV adapter being replugged, an
 It doesn't cover connecting through CGNAT, the ARM images, the Pi's network hardware
 or USB adapter, real speed, or real casting apps.
 
+The dashboard's Go tests, with `gofmt` and `go vet`, run in their own check:
+`nix build '.#checks.x86_64-linux.dashboard' -L --no-link`. On the shared build
+machine, run it under the box's lock, as `private/gate.md` describes for the VM test.
+
 ## First-time setup
 
 All the steps below have been run on real hardware. Pi B was set up in
