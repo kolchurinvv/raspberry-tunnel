@@ -23,17 +23,35 @@ let
   # which misses an adapter that comes back while this is still stopping, as after
   # a quick reset. That also takes the port down if the table goes missing, or is
   # flushed, while nftables stays active.
+  #
+  # Each verdict goes to tvPortVerdict as "loaded" or "missing", for the status
+  # endpoint in modules/status.nix, which mustn't hold the CAP_NET_ADMIN that
+  # reading nftables takes. It's only written when it changes, through a rename so
+  # a reader never sees half of it. A failed write can't stop the gate: it removes
+  # the old verdict rather than leave it standing, and the next round tries again.
+  # systemd removes the whole directory when the gate stops.
+  tvPortVerdict = "/run/tv-port-gate/verdict";
   tvPortGate = pkgs.writeShellApplication {
     name = "tv-port-gate";
-    runtimeInputs = [ pkgs.iproute2 pkgs.nftables ];
+    runtimeInputs = [ pkgs.coreutils pkgs.iproute2 pkgs.nftables ];
     text = ''
+      reported=
       while true; do
         # The broute rule itself, so a flushed table counts as missing.
         rules=$(nft list chain bridge tv-port prerouting 2> /dev/null || true)
         if [[ $rules == *"meta broute set 1"* ]]; then
           ip link set ${cfg.tv} up 2> /dev/null || true
+          verdict=loaded
         else
           ip link set ${cfg.tv} down 2> /dev/null || true
+          verdict=missing
+        fi
+        if [[ $verdict != "$reported" ]]; then
+          if echo "$verdict" > ${tvPortVerdict}.new && mv -f ${tvPortVerdict}.new ${tvPortVerdict}; then
+            reported=$verdict
+          else
+            rm -f ${tvPortVerdict} || true
+          fi
         fi
         sleep 2
       done
@@ -180,6 +198,8 @@ in
       ExecStopPost = "-${pkgs.iproute2}/bin/ip link set ${cfg.tv} down";
       Restart = "always";
       RestartSec = "2s";
+      # Holds the verdict, and goes away whenever the gate stops, restarts included.
+      RuntimeDirectory = "tv-port-gate";
     };
     unitConfig.StartLimitIntervalSec = 0;
   };
