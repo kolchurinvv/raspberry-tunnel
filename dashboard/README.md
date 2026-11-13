@@ -121,6 +121,8 @@ The user deploys it. These are the pieces the cluster needs:
       resourceNames: ["<node-name>"]
       verbs: ["get"]
   ```
+- **The time zone:** set `DASH_TZ` to the site's zone, such as `Europe/Berlin`. The page shows every time in
+  it, and the default is UTC.
 - **Probes:** liveness on `/_dash/healthz`, readiness on `/_dash/readyz`.
 - **The reverse proxy** in front of Headscale forwards only `/`, exactly, and `/_dash/` to the dashboard. It
   keeps everything else, `/api/` included, for Headscale.
