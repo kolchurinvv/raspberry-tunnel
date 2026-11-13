@@ -1,0 +1,263 @@
+{{define "page" -}}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>raspberry tunnel</title>
+<meta name="description" content="Live health of a Raspberry Pi tunnel that lets a TV in one apartment use another apartment's internet connection.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="{{asset "favicon.svg"}}" type="image/svg+xml">
+<link rel="stylesheet" href="{{asset "app.css"}}">
+<script src="{{asset "app.js"}}"></script>
+</head>
+<body>
+<div class="rt">
+<div class="wrap">
+<header class="top">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" width="36" height="36" aria-hidden="true" class="logo">
+      <path class="rb-s" d="M16 8.5V4.5"></path>
+      <path class="rb-l" d="M16 8.5c-2.2-2.6-5-3-7.2-1.6 2.6.2 4.6 1 7.2 1.6z M16 8.5c2.2-2.6 5-3 7.2-1.6-2.6.2-4.6 1-7.2 1.6z"></path>
+      <path class="rb-m" d="M10.5 11.5H21.5 M7.75 16.5H24.25 M10.5 21.5H21.5 M13.25 26.5H18.75 M10.5 11.5L7.75 16.5 M10.5 11.5L13.25 16.5 M16 11.5L13.25 16.5 M16 11.5L18.75 16.5 M21.5 11.5L18.75 16.5 M21.5 11.5L24.25 16.5 M7.75 16.5L10.5 21.5 M13.25 16.5L10.5 21.5 M13.25 16.5L16 21.5 M18.75 16.5L16 21.5 M18.75 16.5L21.5 21.5 M24.25 16.5L21.5 21.5 M10.5 21.5L13.25 26.5 M16 21.5L13.25 26.5 M16 21.5L18.75 26.5 M21.5 21.5L18.75 26.5"></path>
+      <circle class="rb-d" cx="10.5" cy="11.5" r="2.2"></circle>
+      <circle class="rb-d" cx="16" cy="11.5" r="2.2"></circle>
+      <circle class="rb-d" cx="21.5" cy="11.5" r="2.2"></circle>
+      <circle class="rb-d" cx="7.75" cy="16.5" r="2.2"></circle>
+      <circle class="rb-d" cx="13.25" cy="16.5" r="2.2"></circle>
+      <circle class="rb-d" cx="18.75" cy="16.5" r="2.2"></circle>
+      <circle class="rb-d" cx="24.25" cy="16.5" r="2.2"></circle>
+      <circle class="rb-d" cx="10.5" cy="21.5" r="2.2"></circle>
+      <circle class="rb-d" cx="16" cy="21.5" r="2.2"></circle>
+      <circle class="rb-d" cx="21.5" cy="21.5" r="2.2"></circle>
+      <circle class="rb-d" cx="13.25" cy="26.5" r="2.2"></circle>
+      <circle class="rb-d" cx="18.75" cy="26.5" r="2.2"></circle>
+    </svg>
+    <h1><span class="berry">raspberry</span> tunnel</h1>
+    {{if .Dev}}<span class="chip">Sample data</span>{{end}}
+  </div>
+  <div class="controls">
+    <span class="updated" id="rt-updated">{{.Updated}}</span>
+    <nav class="seg" aria-label="Time range">
+      {{- range .Ranges}}<a class="rng" href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>{{end -}}
+    </nav>
+    <div class="seg" role="group" aria-label="Colour scheme" id="rt-theme" hidden>
+      <button type="button" class="rng ico" data-theme="system" aria-pressed="true" aria-label="Follow the system" title="Follow the system"><svg viewBox="0 0 24 24" width="18" height="18" class="ic" aria-hidden="true"><path d="M3 4.5h18v11.5H3z M8 20h8 M12 16v4"></path></svg></button>
+      <button type="button" class="rng ico" data-theme="light" aria-pressed="false" aria-label="Light" title="Light"><svg viewBox="0 0 24 24" width="18" height="18" class="ic" aria-hidden="true"><path d="M8.5 12a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0 -7 0 M12 2.5v2 M12 19.5v2 M2.5 12h2 M19.5 12h2 M5.3 5.3l1.4 1.4 M17.3 17.3l1.4 1.4 M5.3 18.7l1.4-1.4 M17.3 6.7l1.4-1.4"></path></svg></button>
+      <button type="button" class="rng ico" data-theme="dark" aria-pressed="false" aria-label="Dark" title="Dark"><svg viewBox="0 0 24 24" width="18" height="18" class="ic" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"></path></svg></button>
+    </div>
+    <a class="ghost gh" href="{{.GitHub}}" aria-label="Source on GitHub" title="Source on GitHub"><svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true" class="ghmark"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg></a>
+  </div>
+</header>
+<main id="rt-main" data-range="{{.Range}}">
+{{template "main" .}}
+</main>
+</div>
+</div>
+</body>
+</html>
+{{end}}
+
+{{define "icon"}}<svg viewBox="0 0 24 24" width="{{.N}}" height="{{.N}}" class="ic lv-{{.I.Level}}" aria-hidden="true"><path d="{{.I.D}}"></path></svg>{{end}}
+
+{{define "box"}}
+<div class="tbox {{.Cls}}">
+  <div class="tb-title">{{if .B.Colour}}<span class="sw f{{.B.Colour}}"></span>{{end}}{{.B.Title}}</div>
+  <div class="tb-sub">{{.B.Sub}}</div>
+  <div class="tb-status">{{template "icon" sz .B.Icon 15}}{{.B.Status}}</div>
+</div>
+{{end}}
+
+{{define "gauge"}}
+<div class="gwrap{{if .Big}} g-big{{end}}">
+  <div class="gauge{{if .Big}} big{{end}}{{if .Hot}} hot{{end}}{{if .NoData}} nodata{{end}}" role="img" aria-label="{{.Aria}}">
+    {{- if not .NoData}}
+    <div class="liq" style="height: {{.Pct}}%">
+      <svg class="wv wv-b" viewBox="0 0 240 12" preserveAspectRatio="none" aria-hidden="true" style="animation-delay: {{.Delay}}s"><path d="M0 6 Q30 0 60 6 T120 6 T180 6 T240 6 V12 H0 Z"></path></svg>
+      <svg class="wv wv-f" viewBox="0 0 240 12" preserveAspectRatio="none" aria-hidden="true" style="animation-delay: {{.Delay}}s"><path d="M0 6 Q30 0 60 6 T120 6 T180 6 T240 6 V12 H0 Z"></path></svg>
+    </div>
+    {{- end}}
+    <div class="gv gv-out" aria-hidden="true" style="clip-path: inset(0 0 {{.ClipOut}}% 0)"><span class="gv-v">{{.Value}}{{if .Inline}}<span class="gv-ui">{{.Inline}}</span>{{end}}</span>{{if .Unit}}<span class="gv-u">{{.Unit}}</span>{{end}}</div>
+    <div class="gv gv-in" aria-hidden="true" style="clip-path: inset({{.ClipIn}}% 0 0 0)"><span class="gv-v">{{.Value}}{{if .Inline}}<span class="gv-ui">{{.Inline}}</span>{{end}}</span>{{if .Unit}}<span class="gv-u">{{.Unit}}</span>{{end}}</div>
+  </div>
+  <div class="glabel">{{if .Hot}}<svg viewBox="0 0 24 24" width="12" height="12" class="ic lv-warn" aria-hidden="true"><path d="M12 3.5 2.5 20h19L12 3.5z M12 10v4.5 M12 17.5v.01"></path></svg>{{end}}{{.Label}}</div>
+</div>
+{{end}}
+
+{{define "xticks"}}{{range .}}<span class="tnum {{.Align}}" style="left: {{.Left}}%">{{.Label}}</span>{{end}}{{end}}
+
+{{define "main"}}
+<span id="rt-stamp" hidden data-updated="{{.Updated}}"></span>
+
+<section class="panel banner" aria-label="Status">
+  <div class="banner-main">
+    {{template "icon" sz .Banner.Icon 32}}
+    <div class="min0">
+      <h2>{{.Banner.Title}}</h2>
+      <p>{{.Banner.Text}}</p>
+    </div>
+  </div>
+  <div class="hero">
+    <div class="hero-v tnum">{{.Hero.Value}}</div>
+    <div class="hero-l">{{.Hero.Label}}</div>
+  </div>
+</section>
+
+<section class="panel topo-panel" aria-labelledby="path-h">
+  <div class="phead">
+    <div>
+      <h2 id="path-h">Traffic paths</h2>
+      <div class="sub">Every apartment's TV leaves through one exit, {{.Topo.Exit.Title}}</div>
+    </div>
+    <span class="caption">{{.Topo.Caption}}</span>
+  </div>
+  <div class="topo-scroll">
+    <div class="topo-inner{{if .Topo.Multi}} multi{{end}}">
+      <div class="center">{{template "box" (box .Topo.Headscale "tbox-hs")}}</div>
+      <div class="center"><div class="vline"></div></div>
+      <div class="trow-wrap">
+        <div class="trows">
+          {{- range .Topo.Rows}}
+          <div class="trow">
+            {{template "box" (box .TV "tbox-tv")}}
+            <div class="hline"></div>
+            {{template "box" (box .Pi "tbox-pi")}}
+            <div class="tlink">
+              <div class="tlabel">{{template "icon" sz .Tunnel.Icon 16}}Tunnel · {{.Tunnel.Label}}</div>
+              <div class="tline-row"><div class="tline {{.Tunnel.Line}} c{{.Tunnel.Colour}}"></div>{{if $.Topo.Multi}}<div class="tstub"></div>{{end}}</div>
+              <div class="tsub tnum">{{.Tunnel.Sub}}</div>
+            </div>
+          </div>
+          {{- else}}
+          <div class="trow"><div class="tempty">No gateway has joined yet.</div></div>
+          {{- end}}
+          {{if .Topo.Multi}}<div class="bracket"></div>{{end}}
+        </div>
+        {{if .Topo.Multi}}<div class="tstub"></div>{{end}}
+        {{template "box" (box .Topo.Exit "tbox-exit")}}
+        <div class="exitline {{.Topo.ExitLine}}"></div>
+        {{template "box" (box .Topo.Internet "tbox-net")}}
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="cards">
+  {{- range .Cards}}
+  <article class="panel card">
+    <div class="card-head">
+      <div class="min0">
+        <h2 class="card-title"><span class="sw f{{.Colour}}"></span>{{.Name}}</h2>
+        <div class="sub">{{.Role}}</div>
+      </div>
+      <span class="pill">{{template "icon" sz .PillIcon 14}}{{.Pill}}</span>
+    </div>
+    <div{{if .Dim}} class="dim"{{end}}>
+      <div class="ggrid {{if .Headscale}}ggrid-hs{{else}}ggrid-pi{{end}}">
+        {{- range .Gauges}}{{template "gauge" .}}{{end -}}
+      </div>
+      {{if .GaugeNote}}<div class="gnote">{{.GaugeNote}}</div>{{end}}
+      <dl class="stats">
+        {{- range .Stats}}
+        <div class="min0"><dt>{{.Label}}</dt><dd class="tnum">{{.Value}}</dd><div class="note">{{.Note}}</div></div>
+        {{- end}}
+      </dl>
+      {{- if .Nodes}}
+      <ul class="nodes" aria-label="Tagged nodes">
+        {{- range .Nodes}}
+        <li>{{template "icon" sz .Icon 14}}<strong>{{.Host}}</strong><span>{{.State}}, seen {{.Seen}}</span><span class="note">key {{.Key}}</span></li>
+        {{- end}}
+      </ul>
+      {{- end}}
+    </div>
+  </article>
+  {{- end}}
+</div>
+
+<section class="panel route" aria-labelledby="route-h">
+  <div class="phead">
+    <div>
+      <h2 id="route-h">Exit route</h2>
+      <div class="sub">Which connection each TV's traffic left through</div>
+    </div>
+    <div class="legend">
+      <span class="lg"><span class="sw rs-tunnel"></span>Tunnel</span>
+      <span class="lg"><span class="sw rs-own"></span>Own connection</span>
+      <span class="lg"><span class="sw rs-held"></span>Held</span>
+      <span class="lg"><span class="sw rs-nodata"></span>No data</span>
+    </div>
+  </div>
+  {{- if .Route.Empty}}
+  <p class="empty">{{.Route.Empty}}</p>
+  {{- else}}
+  <div class="rgrid rg-top">
+    <div>{{range .Route.Rows}}<div class="rl">{{.TV}}</div>{{end}}</div>
+    <div class="route-plot" data-chart="route">
+      {{- range .Route.Rows}}
+      <div class="rrow"><div class="rbar">{{range .Segs}}<div class="{{.Class}}" style="flex-grow: {{.Grow}}"></div>{{end}}</div></div>
+      {{- end}}
+    </div>
+  </div>
+  <div class="rgrid"><div></div><div class="xax">{{template "xticks" .XTicks}}</div></div>
+  {{- end}}
+</section>
+
+<div class="charts">
+  {{- range .Charts}}
+  <section class="panel chart" aria-label="{{.Title}}">
+    <div class="phead">
+      <div>
+        <h2>{{.Title}}</h2>
+        <div class="sub">{{.Sub}}</div>
+      </div>
+      <div class="legend">
+        {{- if .BandKey}}<span class="lg"><span class="sw sw-band"></span>Relayed</span>{{end}}
+        {{- range .Legend}}<span class="lg">{{if .Swatch}}<span class="sw f{{.Colour}}"></span>{{end}}{{.Name}} <strong class="tnum">{{.Value}}</strong></span>{{end -}}
+      </div>
+    </div>
+    <div class="cgrid cg-top">
+      <div class="yax">{{range .YTicks}}<span class="tnum" style="top: {{.Top}}%">{{.Label}}</span>{{end}}</div>
+      <div class="plot" data-chart="{{.Key}}">
+        <svg viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true">
+          {{- if .Bands}}<path d="{{.Bands}}" class="band"></path>{{end}}
+          {{- if .Grid}}<path d="{{.Grid}}" class="gl"></path>{{end}}
+          <path d="M0 100 H1000" class="bl"></path>
+          {{- if .Ref}}<path d="{{.Ref}}" class="ref"></path>{{end}}
+          {{- if .Area}}<path d="{{.Area}}" class="ar k{{.AreaColour}}"></path>{{end}}
+          {{- range .Lines}}{{if .D}}<path d="{{.D}}" class="ln k{{.Colour}}"></path>{{end}}{{end}}
+        </svg>
+        {{- if .RefLabel}}<span class="reflabel" style="top: {{.RefTop}}%">{{.RefLabel}}</span>{{end}}
+      </div>
+    </div>
+    <div class="cgrid"><div></div><div class="xax">{{template "xticks" $.XTicks}}</div></div>
+  </section>
+  {{- end}}
+</div>
+
+<div class="lists">
+  <section class="panel events" aria-labelledby="ev-h">
+    <h2 id="ev-h">Events</h2>
+    {{- if .NoEvents}}
+    <p class="empty">{{.NoEvents}}</p>
+    {{- else}}
+    <ol>
+      {{- range .Events}}
+      <li>{{template "icon" sz .Icon 18}}<span class="ev-t tnum">{{.Time}}</span><span class="ev-n">{{.Node}}</span><span class="ev-x">{{.Text}}</span></li>
+      {{- end}}
+    </ol>
+    {{- end}}
+  </section>
+  <section class="panel checks" aria-labelledby="ck-h">
+    <h2 id="ck-h">Checks</h2>
+    <ul>
+      {{- range .Checks}}
+      <li>{{template "icon" sz .Icon 18}}<span class="ck-l">{{.Label}}</span><span class="ck-x">{{.Text}}</span></li>
+      {{- end}}
+    </ul>
+  </section>
+</div>
+
+<footer class="foot"><span>{{.Footnote}}</span></footer>
+
+<script type="application/json" id="rt-hover">{{.Hover}}</script>
+{{end}}
