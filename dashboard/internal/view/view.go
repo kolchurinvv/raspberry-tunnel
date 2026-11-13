@@ -390,7 +390,7 @@ func (st *state) banner() Banner {
 		if l, v, note := powerOf(&s); l == Warn {
 			issues = append(issues, issue{Warn, x.Name + " is short of power", x.Name + "'s power: " + strings.ToLower(v) + ", " + note + "."})
 		}
-		if s.TempC != nil && *s.TempC >= TempHot {
+		if s.TempC != nil && isHot(*s.TempC) {
 			issues = append(issues, issue{Warn, x.Name + " is running hot",
 				x.Name + " is at " + degC(s.TempC) + ". It lowers its clock from " + deg(TempClock) +
 					" and slows further as it nears " + deg(TempLimit) + "."})

@@ -99,7 +99,9 @@ func TestBanner(t *testing.T) {
 		{"exit mismatch", func(in *Input) { in.Snap.Pis[1].Latest.ExitMatch = ptr(false) }, Warn, "Pi B's exit address doesn't match"},
 		{"exit check unknown is not a mismatch", func(in *Input) { in.Snap.Pis[1].Latest.ExitMatch = nil }, Good, "All good"},
 		{"hot", func(in *Input) { in.Snap.Pis[0].Latest.TempC = ptr(70.0) }, Warn, "Pi A is running hot"},
-		{"just under hot", func(in *Input) { in.Snap.Pis[0].Latest.TempC = ptr(69.9) }, Good, "All good"},
+		// The page shows whole degrees, so what it shows as 70 °C warns.
+		{"shown as 70", func(in *Input) { in.Snap.Pis[0].Latest.TempC = ptr(69.5) }, Warn, "Pi A is running hot"},
+		{"just under hot", func(in *Input) { in.Snap.Pis[0].Latest.TempC = ptr(69.4) }, Good, "All good"},
 		// A Pi in an enclosure idles at about 61 °C: past its soft limit, no warning (D4).
 		{"past the soft limit", func(in *Input) { in.Snap.Pis[0].Latest.TempC = ptr(61.0) }, Good, "All good"},
 		{"undervoltage now", func(in *Input) { in.Snap.Pis[1].Latest.Undervoltage = ptr(true) }, Warn, "Pi B is short of power"},
@@ -267,8 +269,11 @@ func TestGauges(t *testing.T) {
 	if x := g.temp(ptr(70.0)); !x.Hot {
 		t.Errorf("70 °C isn't amber")
 	}
-	if x := g.temp(ptr(69.9)); x.Hot {
-		t.Errorf("69.9 °C is amber")
+	if x := g.temp(ptr(69.5)); x.Value != "70" || !x.Hot {
+		t.Errorf("69.5 °C = %+v, want shown as 70 and amber", x)
+	}
+	if x := g.temp(ptr(69.4)); x.Hot {
+		t.Errorf("69.4 °C is amber")
 	}
 	if x := g.pct("CPU", ptr(84.9), false); x.Hot {
 		t.Errorf("84.9%% is amber")

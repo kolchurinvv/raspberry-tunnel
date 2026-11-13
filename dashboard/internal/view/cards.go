@@ -76,11 +76,15 @@ func (g *gauges) traffic(v *float64) Gauge {
 	return g.make("Tunnel traffic", f1(v), "Mbit/s", *v/TrafficFullMbps*100, false, true)
 }
 
+// isHot judges the whole degree the page shows (fmt rounds half to even), so
+// a Pi shown at 70 °C is always amber and always warned about.
+func isHot(v float64) bool { return math.RoundToEven(v) >= TempHot }
+
 func (g *gauges) temp(v *float64) Gauge {
 	if v == nil {
 		return g.none("Temperature", false)
 	}
-	hot := *v >= TempHot
+	hot := isHot(*v)
 	ga := g.make("Temperature", f0(v), "", (*v-TempLow)/(TempHigh-TempLow)*100, hot, false)
 	ga.Inline = "°C"
 	ga.Aria = "Temperature " + f0(v) + " °C"
