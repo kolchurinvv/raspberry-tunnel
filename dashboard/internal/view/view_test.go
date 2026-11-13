@@ -98,8 +98,10 @@ func TestBanner(t *testing.T) {
 		{"peer relay", func(in *Input) { in.Snap.Pis[1].Latest.Path = model.PathPeerRelay }, Warn, "Pi B's tunnel is relayed"},
 		{"exit mismatch", func(in *Input) { in.Snap.Pis[1].Latest.ExitMatch = ptr(false) }, Warn, "Pi B's exit address doesn't match"},
 		{"exit check unknown is not a mismatch", func(in *Input) { in.Snap.Pis[1].Latest.ExitMatch = nil }, Good, "All good"},
-		{"hot", func(in *Input) { in.Snap.Pis[0].Latest.TempC = ptr(60.0) }, Warn, "Pi A is running hot"},
-		{"just under hot", func(in *Input) { in.Snap.Pis[0].Latest.TempC = ptr(59.9) }, Good, "All good"},
+		{"hot", func(in *Input) { in.Snap.Pis[0].Latest.TempC = ptr(70.0) }, Warn, "Pi A is running hot"},
+		{"just under hot", func(in *Input) { in.Snap.Pis[0].Latest.TempC = ptr(69.9) }, Good, "All good"},
+		// A Pi in an enclosure idles at about 61 °C: past its soft limit, no warning (D4).
+		{"past the soft limit", func(in *Input) { in.Snap.Pis[0].Latest.TempC = ptr(61.0) }, Good, "All good"},
 		{"undervoltage now", func(in *Input) { in.Snap.Pis[1].Latest.Undervoltage = ptr(true) }, Warn, "Pi B is short of power"},
 		{"undervoltage since boot", func(in *Input) { in.Snap.Pis[1].Latest.UndervoltageEvents = ptr(int64(2)) }, Warn, "Pi B is short of power"},
 		{"gateway not answering", func(in *Input) {
@@ -262,8 +264,11 @@ func TestGauges(t *testing.T) {
 	if x := g.temp(ptr(85.0)); x.Pct != 100 || !x.Hot {
 		t.Errorf("85 °C = %+v", x)
 	}
-	if x := g.temp(ptr(60.0)); !x.Hot {
-		t.Errorf("60 °C isn't amber")
+	if x := g.temp(ptr(70.0)); !x.Hot {
+		t.Errorf("70 °C isn't amber")
+	}
+	if x := g.temp(ptr(69.9)); x.Hot {
+		t.Errorf("69.9 °C is amber")
 	}
 	if x := g.pct("CPU", ptr(84.9), false); x.Hot {
 		t.Errorf("84.9%% is amber")
@@ -325,7 +330,7 @@ func TestChartsShape(t *testing.T) {
 		t.Fatalf("charts = %d", len(p.Charts))
 	}
 	temp := p.Charts[2]
-	if temp.Ref == "" || temp.RefLabel == "" {
+	if temp.Ref == "" || !strings.HasPrefix(temp.RefLabel, "60 °C,") {
 		t.Errorf("temperature chart has no 60 °C line")
 	}
 	if p.Hover.N != in.Window.N || len(p.Hover.Times) != in.Window.N || len(p.Hover.Charts) != 4 || len(p.Hover.Route) != 1 {

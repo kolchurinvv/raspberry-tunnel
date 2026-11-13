@@ -354,7 +354,7 @@ func (st *state) charts() ([]Chart, Hover) {
 	charts := []Chart{
 		mk("traffic", "Tunnel traffic", trafficSub, 0, tHi, tStep, traffic, true, true, 0, ""),
 		mk("latency", "Tunnel latency", latencySub, 0, lHi, lStep, latency, false, true, 0, ""),
-		mk("temp", "Temperature", "CPU, °C", tLo, tTop, 10, temps, false, false, TempHot, "60 °C, the Pi lowers its clock"),
+		mk("temp", "Temperature", "CPU, °C", tLo, tTop, 10, temps, false, false, TempClock, deg(TempClock)+", the Pi lowers its clock"),
 		mk("cpu", "CPU", "All four cores, %", 0, cHi, cStep, cpus, false, false, 0, ""),
 	}
 
