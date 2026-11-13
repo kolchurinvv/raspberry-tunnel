@@ -25,10 +25,10 @@ build-image pi: (check-key pi)
 # Where the cluster pulls the dashboard's image from.
 dashboard_image := "ghcr.io/kolchurinvv/raspberry-tunnel-dashboard"
 
-# Build the dashboard's image and push it to ghcr.io, tagged with this commit and
-# `latest`. Run it from main/, on a commit that has reached GitHub, with gh logged in
-# (its token needs write:packages). On the shared build machine, run it when the box
-# is free: it builds the dashboard if the store doesn't have it yet.
+# Run it from main/, on a commit that has reached GitHub, with gh logged in (its
+# token needs write:packages). On the shared build machine, run it when the box is
+# free: it builds the dashboard if the store doesn't have it yet.
+# Build the dashboard's image and push it to ghcr.io, tagged with this commit and latest
 push-dashboard-image:
   #!/usr/bin/env bash
   set -euo pipefail
