@@ -652,6 +652,9 @@ in
         for host, machine, address in (("pi-a", pi_a, pi_a_tailnet), ("pi-b", pi_b, pi_b_tailnet)):
             wall_ms, cpu_ms = request_cost(machine, address)
             print(f"one status request to {host}: {wall_ms:.1f} ms for the dashboard, {cpu_ms:.1f} ms of CPU on {host}, averaged over 10")
+            # Every request loads pi-status@'s unit afresh, so a setting in the wrong
+            # section would be ignored, and warned about, each time.
+            machine.fail("journalctl -b --no-pager -o cat | grep -F 'pi-status@.service' | grep -q 'Unknown key'")
 
     with subtest("the status endpoint is open only on the tailnet, and only to the dashboard and the user's own devices"):
         pi_b_lan = lan_address(pi_b, "br0")

@@ -401,6 +401,9 @@ in
 
     systemd.services."pi-status@" = {
       description = "Answer one request to the tunnel's status endpoint";
+      # A failed request doesn't stay behind in systemctl --failed. CollectMode is a
+      # [Unit] setting: under [Service], systemd ignores it and warns on every request.
+      unitConfig.CollectMode = "inactive-or-failed";
       # C skips loading the locale archive in every process the request starts.
       environment = {
         LC_ALL = "C";
@@ -413,8 +416,6 @@ in
         StandardError = "journal";
         # Ends a stuck request well after its reply was due.
         RuntimeMaxSec = 3;
-        # A failed request doesn't stay behind in systemctl --failed.
-        CollectMode = "inactive-or-failed";
         # systemd's info lines name each connection's addresses, twice a minute.
         # Warnings and errors still show. That includes anything the script
         # writes to stderr without a level, as SyslogLevel makes it a warning
