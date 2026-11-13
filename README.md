@@ -184,10 +184,17 @@ the same for `b`). The dashboard joins with a key from
   switch-nix-on a` switches to it at once instead. For Pi B, the recipes jump
   through Pi A by themselves (see below). The recipes read `.env` and
   `private/`, which git ignores, so run them from the folder that holds both:
-  `main/`, in a checkout with a folder per branch. To switch without just:
+  `main/`, in a checkout with a folder per branch. To switch Pi A without just:
   ```sh
   NIX_SSHOPTS="-i <key>" nixos-rebuild switch --flake '.#pi-a' --target-host root@<ip> \
     --no-reexec --override-input admin-key path:/absolute/path/to/pi-a.pub \
+    --override-input extra-local-nets path:$PWD/private/extra-local-nets.nix
+  ```
+  Pi B is reached only through Pi A, with `rt-pi-a` and `rt-pi-b` in
+  `~/.ssh/config` (see below):
+  ```sh
+  NIX_SSHOPTS="-J rt-pi-a" nixos-rebuild switch --flake '.#pi-b' --target-host rt-pi-b \
+    --no-reexec --override-input admin-key path:/absolute/path/to/pi-b.pub \
     --override-input extra-local-nets path:$PWD/private/extra-local-nets.nix
   ```
   If a change moves the Pi's own address, `switch` loses the SSH connection halfway
