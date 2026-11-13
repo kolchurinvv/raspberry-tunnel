@@ -1,7 +1,7 @@
 # D2: A public dashboard shows the tunnel's live health, pulled from the Pis over the tailnet
 
 - **Date:** 2026-11-13
-- **Status:** accepted; amended by D3 (the banner levels, the dashboard's own state on the page, and the meanings the Pi side settled)
+- **Status:** accepted; amended by D3 (the banner levels, the dashboard's own state on the page, and the meanings the Pi side settled) and D4 (the temperature warning starts at 70 °C)
 - **Decided by:** the user.
   - **Public, live data with no sign-in.**
   - **The design** (mockup A), and serving it at the root of the hostname the

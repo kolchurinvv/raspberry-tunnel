@@ -1,7 +1,7 @@
 # D3: The dashboard is one Go binary that joins the tailnet itself and renders its pages on the server
 
 - **Date:** 2026-11-13
-- **Status:** accepted; amends D2. It settles what D2 left open, and records what the two streams and their reviews settled about D2's contract and banner.
+- **Status:** accepted; amends D2; amended by D4 (the temperature warning starts at 70 °C). It settles what D2 left open, and records what the two streams and their reviews settled about D2's contract and banner.
 - **Decided by:** the user.
   - The dashboard is only a foil for the project. What the repository showcases
     is the NixOS configuration and the tunnel, so the dashboard should take the
