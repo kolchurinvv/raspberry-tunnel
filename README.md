@@ -1,34 +1,37 @@
 # raspberry-tunnel
 
-Two Raspberry Pi 3 B+ boards running NixOS, so the TV in the copper apartment
-uses the fiber apartment's internet connection, while staying on its own apartment's
-network for casting.
+Two Raspberry Pi 3 B+ boards running NixOS, so the TV in apartment B uses
+apartment A's internet connection, while staying on its own apartment's network
+for casting.
 
 ```
-Fiber apartment                            Copper apartment
+Apartment A                                Apartment B
 
 TV A ─ router ── ISP router ── internet ── combo unit ── Pi B ── USB adapter ── TV B
           │
          Pi A (exit)
 ```
 
-Pi B bridges TV B onto the copper apartment's network, so the TV gets its address
-from the combo unit and phones there can cast to it as usual. Everything TV B sends
-to the internet still goes through Pi B, over the tunnel to Pi A, and out through
-the fiber connection. If the tunnel stops working, Pi B moves TV B to the copper
-connection after about 20 seconds, so the TV stays online but shows the copper
-apartment's address. It moves back about 30 seconds after the tunnel returns. If
-the copper connection is down as well, the TV stays where it is, as moving wouldn't
-help. Pi B being off also takes TV B offline, as the TV has no other path. A
-Headscale server on a small VPS connects the Pis and can relay between them, but
-traffic never exits there.
+Each apartment is named after its Pi: apartment A has Pi A and TV A, apartment B
+has Pi B and TV B, and any later apartment takes its Pi's letter.
+
+Pi B bridges TV B onto apartment B's network, so the TV gets its address from the
+combo unit and phones there can cast to it as usual. Everything TV B sends to the
+internet still goes through Pi B, over the tunnel to Pi A, and out through
+apartment A's connection. If the tunnel stops working, Pi B moves TV B to
+apartment B's own connection after about 20 seconds, so the TV stays online but
+shows apartment B's address. It moves back about 30 seconds after the tunnel
+returns. If apartment B's connection is down as well, the TV stays where it is, as
+moving wouldn't help. Pi B being off also takes TV B offline, as the TV has no
+other path. A Headscale server on a small VPS connects the Pis and can relay
+between them, but traffic never exits there.
 
 ## Status
 
 | Piece | State |
 |---|---|
 | Pi A config (`hosts/pi-a.nix`, `modules/`) | Passes the VM test. Runs on a real Pi, has joined Headscale, and serves as Pi B's exit node |
-| Pi B config (`hosts/pi-b.nix`, `modules/`) | Passes the VM test. Runs on a real Pi in the copper apartment, with TV B bridged onto the combo unit's network through its USB adapter. TV B's traffic goes through the tunnel, which reached Pi A over a direct path rather than a relay, and websites see the fiber apartment's address. The copper apartment's network hands out IPv6, and TV B gets none. Casting from a phone on the copper apartment's Wi-Fi works. Before moving, it was tried in the fiber apartment on the default VLAN, where streaming, casting from an app and screen mirroring all worked, on Pi B's own connection and through the tunnel |
+| Pi B config (`hosts/pi-b.nix`, `modules/`) | Passes the VM test. Runs on a real Pi in apartment B, with TV B bridged onto the combo unit's network through its USB adapter. TV B's traffic goes through the tunnel, which reached Pi A over a direct path rather than a relay, and websites see apartment A's address. Apartment B's network hands out IPv6, and TV B gets none. Casting from a phone on apartment B's Wi-Fi works. Before moving, it was tried in apartment A on the default VLAN, where streaming, casting from an app and screen mirroring all worked, on Pi B's own connection and through the tunnel |
 | Headscale policy (`headscale/policy.json`) | Passes the VM test |
 | Headscale server | Runs as a second Headscale on an existing server, set up by hand. Its config isn't in this repository |
 | SD card images | Both built and flashed |
@@ -42,8 +45,8 @@ nix build '.#checks.x86_64-linux.tunnel' -L --no-link
 
 This needs x86_64 Linux with KVM and about 8 GB of free memory. It boots the real Pi
 roles and a real Headscale in VMs, then checks where TV B's traffic goes and what it
-can't reach, and that a phone on the copper apartment's network can find TV B and
-connect to it. It also checks the move to the copper connection and back when the
+can't reach, and that a phone on apartment B's network can find TV B and connect
+to it. It also checks the move to apartment B's connection and back when the
 tunnel fails, and recovery after a power cut, the TV adapter being replugged, and
 `systemd-networkd` restarting.
 
@@ -52,9 +55,9 @@ or USB adapter, real speed, or real casting apps.
 
 ## First-time setup
 
-All the steps below have been run on real hardware. Pi B was set up in the fiber
-apartment, running steps 1 to 5 before it bridged its TV port, then moved to the
-copper apartment, where step 9 passed. Passing
+All the steps below have been run on real hardware. Pi B was set up in
+apartment A, running steps 1 to 5 before it bridged its TV port, then moved to
+apartment B, where step 9 passed. Passing
 `private/extra-local-nets.nix` to a build is newer, and has only been evaluated.
 
 1. Give each Pi an SSH key pair of its own, and keep the keys outside this repository,
@@ -86,7 +89,7 @@ copper apartment, where step 9 passed. Passing
    zstd -dc result/sd-image/*.img.zst | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
    ```
 4. Connect the Pis:
-   - **Pi A:** into a PoE port on the fiber apartment's switch, with a fixed IP.
+   - **Pi A:** into a PoE port on apartment A's switch, with a fixed IP.
    - **Pi B:** its built-in port goes to the combo unit. TV B goes into the USB adapter.
 5. Check each Pi, allowing a couple of minutes on first boot while its disk expands.
    `wan0` should have an address (`br0` on Pi B), the ping should get replies, `df`
@@ -139,9 +142,9 @@ copper apartment, where step 9 passed. Passing
 - **Reaching Pi B over SSH while the tunnel is up:** Pi B sends its own traffic through
   Pi A too, except to the network it's plugged into. So it only answers SSH from its
   own network, such as through Pi A with `ssh -J rt-pi-a rt-pi-b` while both are on
-  the fiber apartment's default VLAN, or over the tailnet. Its replies to anywhere
-  else go into the tunnel, and Pi A drops those bound for private ranges. Once Pi B
-  is in the copper apartment, the tailnet is the only way in from the fiber side.
+  apartment A's default VLAN, or over the tailnet. Its replies to anywhere else go
+  into the tunnel, and Pi A drops those bound for private ranges. Once Pi B is in
+  apartment B, the tailnet is the only way in from apartment A.
 - **Heat and power:** the config sets up no fan control for the PoE HAT. With all four
   cores busy for 5 minutes, Pi A settled at about 65 °C with no undervoltage warnings.
   It hasn't been measured carrying tunnel traffic.
@@ -153,10 +156,10 @@ copper apartment, where step 9 passed. Passing
   `pi-a-1`, while Pi B still looks for `pi-a`. After re-flashing Pi A, run
   `systemctl restart tailscaled-set` on Pi B as well. This hasn't been tested.
 - **Checking which connection TV B is on:** the TV gives no sign when it moves. On
-  Pi B, `ip rule show priority 5260` prints a rule while it's on the copper
+  Pi B, `ip rule show priority 5260` prints a rule while it's on apartment B's
   connection, and `journalctl -u tv-fallback` shows when it moved.
 - **TV B's Wi-Fi:** make the TV forget the combo unit's Wi-Fi, or it can fall back
-  to it and show the copper apartment's address.
+  to it and show apartment B's address.
 - **Pi B's USB adapter:** connect only the TV. Pi B bridges it onto the apartment's
   network and sends everything from it through the tunnel, so a switch there would
   take other devices along, and a cable back to the apartment's network would loop
