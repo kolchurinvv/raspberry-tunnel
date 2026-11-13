@@ -1,5 +1,6 @@
 {
   "tagOwners": {
+    "tag:dashboard": ["tunnel@"],
     "tag:exit": ["tunnel@"],
     "tag:gateway": ["tunnel@"]
   },
@@ -16,6 +17,11 @@
       "src": ["tunnel@"],
       "dst": ["tag:exit", "tag:gateway"],
       "ip": ["tcp:22"]
+    },
+    {
+      "src": ["tag:dashboard", "tunnel@"],
+      "dst": ["tag:exit", "tag:gateway"],
+      "ip": ["tcp:9190"]
     }
   ]
 }
