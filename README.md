@@ -28,7 +28,7 @@ traffic never exits there.
 | Piece | State |
 |---|---|
 | Pi A config (`hosts/pi-a.nix`, `modules/`) | Passes the VM test. Runs on a real Pi, has joined Headscale, and serves as Pi B's exit node |
-| Pi B config (`hosts/pi-b.nix`, `modules/`) | Passes the VM test. Tried on a real Pi in the fiber apartment, with a TV bridged onto the default VLAN through its USB adapter. Streaming, casting from an app and screen mirroring from a phone all worked, on Pi B's own connection and through the tunnel to Pi A, which ran over a direct path on the LAN. Pi B is now unplugged, waiting to move. Nothing has run in the copper apartment yet |
+| Pi B config (`hosts/pi-b.nix`, `modules/`) | Passes the VM test. Runs on a real Pi in the copper apartment, with TV B bridged onto the combo unit's network through its USB adapter. TV B's traffic goes through the tunnel, which reached Pi A over a direct path rather than a relay, and websites see the fiber apartment's address. The copper apartment's network hands out IPv6, and TV B gets none. Casting from a phone on the copper apartment's Wi-Fi works. Before moving, it was tried in the fiber apartment on the default VLAN, where streaming, casting from an app and screen mirroring all worked, on Pi B's own connection and through the tunnel |
 | Headscale policy (`headscale/policy.json`) | Passes the VM test |
 | Headscale server | Runs as a second Headscale on an existing server, set up by hand. Its config isn't in this repository |
 | SD card images | Both built and flashed |
@@ -52,8 +52,9 @@ or USB adapter, real speed, or real casting apps.
 
 ## First-time setup
 
-All the steps below have been run on real hardware, with both Pis in the fiber
-apartment for now. Pi B ran steps 1 to 5 before it bridged its TV port. Passing
+All the steps below have been run on real hardware. Pi B was set up in the fiber
+apartment, running steps 1 to 5 before it bridged its TV port, then moved to the
+copper apartment, where step 9 passed. Passing
 `private/extra-local-nets.nix` to a build is newer, and has only been evaluated.
 
 1. Give each Pi an SSH key pair of its own, and keep the keys outside this repository,
@@ -165,8 +166,7 @@ apartment for now. Pi B ran steps 1 to 5 before it bridged its TV port. Passing
 - **Casting to TV B:** phones find it the usual way, as long as they're on the same
   network as Pi B's built-in port. TV B can reach that network, and any network the
   router gives Pi B a route to over DHCP, but no other private network, the tailnet
-  or Pi B itself. While Pi B is on trial in the fiber apartment, that network is the
-  default VLAN.
+  or Pi B itself.
 - **Pi B's firewall:** the TV's port only comes up while Pi B's bridge rules are
   loaded, as without them TV B would bypass the tunnel. If nftables stops,
   `systemctl start nftables` brings both back.
