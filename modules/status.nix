@@ -40,9 +40,13 @@ let
   # connection.
   fallbackPriority = 5260;
 
-  # Every step that waits has a deadline, so the reply arrives within D2's 2
-  # seconds: nc gives up on tailscaled after a second without data, and the
-  # rest is local. Only the ping normally takes that second, when no pong comes.
+  # One deadline for the whole request keeps the reply within D2's 2 seconds,
+  # counted from when the script starts: half a second at most to read the
+  # request, no ping once 0.6 seconds have gone, and nc gives up on tailscaled
+  # after a second without data. tailscaled writes each answer at once, so only
+  # a ping without a pong takes that second. So the slowest reply, to a client
+  # that takes its half second and a ping that goes unanswered, comes after about
+  # 1.6 seconds and the local work. RuntimeMaxSec below is the backstop.
   #
   # bash builds the reply, checking every value it read against the shape its
   # field takes, and jq only the tunnel list from tailscaled's JSON: a jq
@@ -56,6 +60,10 @@ let
       # extglob for the number checks below, which cost a tenth of a regex.
       shopt -s extglob nullglob
 
+      # The deadline counts from here, in microseconds. LC_ALL=C in the unit keeps
+      # the dot in EPOCHREALTIME.
+      start=''${EPOCHREALTIME/./}
+
       replied=
       reply() {
         local status=$1 body=$2
@@ -65,6 +73,15 @@ let
       }
       # Whatever stops the script before it replies, the client still gets a 500.
       trap '[[ -n $replied ]] || reply "500 Internal Server Error" "{\"schema\":1,\"error\":\"the status script stopped before replying\"}"' EXIT
+
+      # Sets left to what's left of the request's first $1 microseconds, in the
+      # seconds read -t takes, or fails once they're spent. No process.
+      left=""
+      within() {
+        local spent=$((''${EPOCHREALTIME/./} - start))
+        ((spent < $1)) || return 1
+        printf -v left '%d.%06d' $((($1 - spent) / 1000000)) $((($1 - spent) % 1000000))
+      }
 
       # Reads a file's first line into the variable named by $1, which stays
       # empty if the file is missing or can't be read. No process.
@@ -90,16 +107,23 @@ let
         esac
       }
 
-      # The request line, then the headers up to the blank line. All of them:
-      # closing a connection with unread data sends a reset, which can cost the
-      # client the reply.
-      request=
-      IFS= read -r -t 1 -n 4096 request || true
+      # The request line, then the headers up to the blank line, within half a
+      # second in all. Reading the headers matters: closing a connection with
+      # unread data sends a reset, which can cost the client the reply. bash
+      # reads a socket a byte at a time, which only a request of a few hundred
+      # bytes makes cheap.
+      request="" header=""
+      if within 500000; then IFS= read -r -t "$left" -n 4096 request || true; fi
       request=''${request%$'\r'}
       for ((i = 0; i < 64; i++)); do
-        IFS= read -r -t 1 -n 4096 header || break
+        within 500000 || break
+        IFS= read -r -t "$left" -n 4096 header || break
         [[ -n ''${header%$'\r'} ]] || break
       done
+      if [[ -z $request ]]; then
+        reply "408 Request Timeout" '{"schema":1,"error":"no request within half a second"}'
+        exit 0
+      fi
       request_line='^([A-Z]+) ([^ ]+) HTTP/1\.[01]$'
       if [[ ! $request =~ $request_line ]]; then
         reply "400 Bad Request" '{"schema":1,"error":"bad request"}'
@@ -127,7 +151,7 @@ let
         # The exit node's IPv4 address, to ping it. Only a pointer: jq checks
         # the answer came from the address the full status gives the exit node.
         exit_node_ip='"ExitNodeStatus":[[:space:]]*\{[^}]*"TailscaleIPs":[[:space:]]*\[[^]]*"(([0-9]{1,3}\.){3}[0-9]{1,3})/32"'
-        if [[ $tailscale =~ $exit_node_ip ]]; then
+        if [[ $tailscale =~ $exit_node_ip ]] && within 600000; then
           ping_ip=''${BASH_REMATCH[1]}
           # One attempt. Without a pong tailscaled never answers, so nc's
           # deadline is all that ends it.
