@@ -126,6 +126,7 @@ after the kit's numbered modules. See `ai/06`.
 | `<base>` branch | `main`. The repository has no remote, which the user doesn't need for now. |
 | Branches and commits | Commit directly to `main`, the user's decision on 2026-11-01, which overrides `ai/01` § Branching. Conventional Commits, one concern per commit, with a body saying what changed and why. |
 | Decision records | `docs/decisions/D<n>-*.md`, from `ai/templates/decision-record.md`. Only D1 so far. Earlier decisions came from the user in conversation and aren't written down. |
+| `<project-docs>` (`ai/06`) | `docs/`: decision records and the contracts that parallel streams work to (`ai/09`) in `docs/decisions/`, runbooks in `docs/runbooks/` once there's one, other specs directly under `docs/`. Never under `ai/`. |
 | Status docs (rule 5) | `README.md`, including its status table and first-time setup. |
 | Generated baselines (rule 3) | `flake.lock`, the only one. Update it only when the user asks, as its own commit. |
 | `<read-back>` (`ai/10`) | none: no application data store. The power-cut subtest in `tests/tunnel.nix` shows the Tailscale state on disk survives a crash, by checking the tunnel returns unaided. |
@@ -135,9 +136,10 @@ after the kit's numbered modules. See `ai/06`.
 | Quality gates (rule 4) | The subtests in `tests/tunnel.nix` may only get stricter, and so may the forward chains in `hosts/`, Pi B's bridge table `tv-port`, and the block lists in `modules/local-nets.nix` and `private/extra-local-nets.nix`. |
 | Private data | `private/`, gitignored: this site's real network values and machine notes, which public files leave out and may point to. Never commit its contents or copy them into tracked files. |
 | CI (rule 6) | none: no remote and no CI. The gate only runs locally. |
-| Adversarial review (core 10) | A fresh sub-agent follows `ai/agents/adversary.md`, given the request and the diff, and told the gate's one-at-a-time limit. No repository-specific review tool. |
+| Adversarial review (core 10) | One pass by a fresh sub-agent that follows `ai/agents/adversary.md`, given the request and the diff, and told the gate's one-at-a-time limit. Every finding gets an answer, and another round happens only when the user asks. No repository-specific review tool. |
 | Agent definitions | `ai/agents/*.md`, from the kit. The repository has no agents of its own. |
 | Memory root | Claude Code's per-project memory directory, outside the repository and untracked. The user's decision on 2026-11-01, which overrides core rule 9: it holds network details and the repository may be published later. |
 | Autonomy | Agents edit this repository's working tree, run the gate, and commit to `main` at each coherent stopping point without asking. That's the user's decision on 2026-11-02, which overrides their global "commit or push only when asked" for this repository. Pushes and writes outside this repository (such as `~/.config/nixos`) need the user to ask. |
 | `Feedback (star-pupil)` | off |
 | The kit itself | Vendored from ord-ai-n (version in `ai/.kit-manifest`). Update by re-running the installer; never edit `ai/` or the block above. |
+| Amendments reconciled | Through A3 |
