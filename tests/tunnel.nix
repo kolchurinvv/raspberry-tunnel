@@ -1,7 +1,8 @@
 # Runs the real Pi A and Pi B roles in VMs against a real Headscale, and checks
 # where TV B's traffic goes. VLAN 1 stands in for the internet plus apartment A's
 # LAN, VLAN 2 for apartment B's network behind its router, and VLAN 3 for the
-# cable between Pi B and the TV.
+# cable between Pi B and the TV. The site on the internet is also the dashboard,
+# which reads both Pis' status endpoint over the tailnet (D2).
 #
 # It doesn't cover CGNAT or the Pi hardware.
 { lib, pkgs, ... }:
@@ -115,6 +116,10 @@ let
     # Any public range will do: the secure VLAN's stand-in, which the private
     # ranges in modules/local-nets.nix don't cover.
     tunnel.extraLocalNets = [ "5.5.5.0/29" ];
+    # The exit check's sites. The first is a port with nothing listening, so the
+    # check falls back to the second, the site's own whoami for it, apart from
+    # the one the TV's checks read.
+    tunnel.publicIpUrls = [ "http://203.0.113.1:8081/" "http://203.0.113.1:8080/" ];
     security.pki.certificateFiles = [ "${tlsCert}/cert.pem" ];
     environment.systemPackages = [ pkgs.conntrack-tools pkgs.curl ];
   };
@@ -240,7 +245,10 @@ in
       environment.systemPackages = [ pkgs.curl ];
     };
 
-    # A site on the internet, and the way out to it for apartment B's router.
+    # A site on the internet, and the way out to it for apartment B's router. Also
+    # the dashboard, a tailnet node tagged tag:dashboard, which reads the Pis'
+    # status from the internet as the real one will. Being last in alphabetical
+    # order, it renumbers no other node.
     web = {
       virtualisation.vlans = [ 1 ];
       networking.interfaces.eth1.ipv4.addresses = [
@@ -257,9 +265,17 @@ in
           prefixLength = 24;
         }
       ];
-      networking.firewall.allowedTCPPorts = [ 80 ];
+      # 8081 is open with nothing behind it, so the Pis' first exit check site is
+      # refused at once rather than left to time out.
+      networking.firewall.allowedTCPPorts = [ 80 8080 8081 ];
       networking.firewall.allowedUDPPorts = [ 53 ];
       systemd.services.whoami = whoamiService 80;
+      # For the Pis' exit checks. A log of its own keeps their requests out of
+      # the one the TV's checks read.
+      systemd.services.exit-check-site = whoamiService 8080;
+      services.tailscale.enable = true;
+      security.pki.certificateFiles = [ "${tlsCert}/cert.pem" ];
+      environment.systemPackages = [ pkgs.curl ];
       systemd.services.dns-whoami = {
         wantedBy = [ "multi-user.target" ];
         # It binds to one of the addresses that service adds.
@@ -327,6 +343,9 @@ in
   };
 
   testScript = ''
+    import json
+    import re
+
     FIND_WEB = "curl -fsS --max-time 5 http://203.0.113.1/"
     PI_A = "192.0.2.2"
     # The addresses of apartment B's router on the internet and on its own network.
@@ -377,6 +396,146 @@ in
         for address in (pi_a_tailnet, pi_b_tailnet, lan_address(pi_b, "br0")):
             tv.fail(ssh_port(address))
 
+    # The Pis' status endpoint (D2): its fields, the CPU ticks in /proc/stat's
+    # order, and the interfaces each Pi reports, by their names in these VMs.
+    STATUS_FIELDS = {
+        "schema", "host", "role", "time", "uptime_s", "cpu", "temp_c", "undervoltage",
+        "undervoltage_events", "mem", "disk", "net", "tunnel", "public_ip", "gateway",
+    }
+    TUNNEL_FIELDS = {"peer", "online", "path", "relay", "rx_bytes", "tx_bytes", "latency_ms"}
+    CPU_TICKS = ("user", "nice", "system", "idle", "iowait", "irq", "softirq", "steal")
+    PI_A_INTERFACES = ("eth1", "tailscale0")
+    PI_B_INTERFACES = ("eth1", "br0", "eth2", "tailscale0")
+    UTC_TIME = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
+
+    def status_port(address):
+        return f"timeout 3 bash -c '</dev/tcp/{address}/9190'"
+
+    def timed_status(address, reader=None):
+        # Asked as the dashboard asks, and how long the answer took, in seconds.
+        reader = reader or web
+        out = reader.succeed(f"curl -fsS --max-time 5 -w '\\n%{{time_total}}' http://{address}:9190/status")
+        body, seconds = out.rsplit("\n", 1)
+        return json.loads(body), float(seconds)
+
+    def status(address, reader=None):
+        return timed_status(address, reader)[0]
+
+    def wait_for_status(address, condition, timeout=60):
+        # Asks until an answer meets the condition, and returns that answer.
+        answers = []
+
+        def met(_):
+            code, out = web.execute(f"curl -fsS --max-time 5 http://{address}:9190/status")
+            answers.append(json.loads(out) if code == 0 else None)
+            return answers[-1] is not None and condition(answers[-1])
+
+        retry(met, timeout_seconds=timeout)
+        return answers[-1]
+
+    def paths(reply):
+        return [entry["path"] for entry in reply["tunnel"] or []]
+
+    def is_count(value):
+        return type(value) is int and value >= 0
+
+    def check_status(reply, host, role, interfaces):
+        # Every field of schema 1, of its type. Only what a VM has no hardware for
+        # is null.
+        assert set(reply) == STATUS_FIELDS, f"{host}: {sorted(reply)}"
+        assert (reply["schema"], reply["host"], reply["role"]) == (1, host, role), reply
+        assert UTC_TIME.fullmatch(reply["time"]), reply["time"]
+        assert is_count(reply["uptime_s"]), reply["uptime_s"]
+        load, ticks = reply["cpu"]["load"], reply["cpu"]["stat"]
+        assert len(load) == 3 and all(type(x) in (int, float) and x >= 0 for x in load), load
+        assert list(ticks) == list(CPU_TICKS) and all(map(is_count, ticks.values())), ticks
+        # A VM has no SoC sensor or Pi firmware, and nothing counts undervoltage
+        # events.
+        assert reply["temp_c"] is None and reply["undervoltage"] is None and reply["undervoltage_events"] is None, reply
+        mem, disk = reply["mem"], reply["disk"]
+        assert list(mem) == ["total_kb", "available_kb"] and 0 < mem["available_kb"] <= mem["total_kb"], mem
+        assert list(disk) == ["total_b", "used_b", "avail_b"] and all(map(is_count, disk.values())), disk
+        assert 0 < disk["used_b"] and disk["used_b"] + disk["avail_b"] <= disk["total_b"], disk
+        assert list(reply["net"]) == list(interfaces), reply["net"]
+        for counters in reply["net"].values():
+            assert list(counters) == ["rx_bytes", "tx_bytes"] and all(map(is_count, counters.values())), reply["net"]
+        for entry in reply["tunnel"] or []:
+            assert set(entry) == TUNNEL_FIELDS, entry
+        public_ip = reply["public_ip"]
+        assert public_ip is None or (list(public_ip) == ["value", "checked"] and UTC_TIME.fullmatch(public_ip["checked"])), public_ip
+        gateway = reply["gateway"]
+        if role == "exit":
+            assert gateway is None, gateway
+        else:
+            assert list(gateway) == ["tv_port", "tv_port_gated", "fallback"] and list(gateway["tv_port"]) == ["link", "speed_mbps"], gateway
+            assert all(type(x) is bool for x in (gateway["tv_port"]["link"], gateway["tv_port_gated"], gateway["fallback"])), gateway
+        return reply
+
+    def read_sources(machine, interfaces):
+        # What the endpoint reads, read on the Pi itself.
+        counters = " ".join(f"/sys/class/net/{i}/statistics/rx_bytes /sys/class/net/{i}/statistics/tx_bytes" for i in interfaces)
+        lines = machine.succeed(
+            "date -u +%Y-%m-%dT%H:%M:%SZ; cut -d' ' -f1 /proc/uptime; head -n 1 /proc/stat; "
+            f"awk '/^MemTotal:/ {{print $2}}' /proc/meminfo; stat -f -c '%S %b' /; cat {counters}"
+        ).split("\n")
+        date, uptime, cpu, mem_total, statfs = lines[:5]
+        size, blocks = map(int, statfs.split())
+        values = list(map(int, lines[5:5 + 2 * len(interfaces)]))
+        return {
+            "time": date,
+            "uptime": float(uptime),
+            "ticks": list(map(int, cpu.split()[1:9])),
+            "mem_total": int(mem_total),
+            "disk_total": size * blocks,
+            "net": {i: values[2 * n:2 * n + 2] for n, i in enumerate(interfaces)},
+        }
+
+    def check_against_sources(machine, address, host, role, interfaces):
+        # Reads the Pi's own /proc and /sys either side of a request. Each value in
+        # the answer falls between the two readings, or equals what doesn't change.
+        before = read_sources(machine, interfaces)
+        reply = check_status(status(address), host, role, interfaces)
+        after = read_sources(machine, interfaces)
+        assert before["time"] <= reply["time"] <= after["time"], (before["time"], reply["time"], after["time"])
+        assert int(before["uptime"]) <= reply["uptime_s"] <= after["uptime"], (before["uptime"], reply["uptime_s"])
+        for n, tick in enumerate(CPU_TICKS):
+            # The kernel's proc documentation warns iowait can step back, and on a
+            # tickless kernel idle comes from the same accounting, so only the
+            # others are held to the readings.
+            if tick not in ("idle", "iowait"):
+                assert before["ticks"][n] <= reply["cpu"]["stat"][tick] <= after["ticks"][n], tick
+        assert reply["mem"]["total_kb"] == before["mem_total"], reply["mem"]
+        assert reply["disk"]["total_b"] == before["disk_total"], reply["disk"]
+        for interface in interfaces:
+            for n, counter in enumerate(("rx_bytes", "tx_bytes")):
+                assert before["net"][interface][n] <= reply["net"][interface][counter] <= after["net"][interface][n], (interface, counter)
+        return reply
+
+    def check_gateway_against_sources(reply):
+        # Pi B's gateway fields against rule 5260, the TV's port and the gate, read
+        # on Pi B just after the answer.
+        gateway = reply["gateway"]
+        rule = pi_b.succeed("ip rule show priority 5260").strip()
+        assert gateway["fallback"] == bool(rule), (gateway, rule)
+        operstate = pi_b.succeed("cat /sys/class/net/eth2/operstate").strip()
+        assert gateway["tv_port"]["link"] == (operstate == "up"), (gateway, operstate)
+        speed = int(pi_b.succeed("cat /sys/class/net/eth2/speed 2> /dev/null || echo -1").strip())
+        assert gateway["tv_port"]["speed_mbps"] == (speed if operstate == "up" and speed > 0 else None), (gateway, speed)
+        gated = pi_b.execute("systemctl is-active --quiet tv-port-gate && nft list chain bridge tv-port prerouting | grep -q 'meta broute set 1'")[0] == 0
+        assert gateway["tv_port_gated"] == gated, (gateway, gated)
+
+    def request_cost(machine, address, requests=10):
+        # The dashboard's wall time per request, and the CPU time of the Pi's
+        # per-request services, which systemd puts in one slice for the template.
+        cpu = "awk '/^usage_usec/ {print $2}' /sys/fs/cgroup/system.slice/system-pi*status.slice/cpu.stat"
+        before = int(machine.succeed(cpu))
+        seconds = list(map(float, web.succeed(
+            f"for i in $(seq {requests}); do curl -fsS --max-time 5 -o /dev/null -w '%{{time_total}}\\n' http://{address}:9190/status; done"
+        ).split()))
+        after = int(machine.succeed(cpu))
+        assert len(seconds) == requests and max(seconds) < 2, seconds
+        return 1000 * sum(seconds) / requests, (after - before) / 1000 / requests
+
     start_all()
     headscale.wait_for_unit("headscale")
     headscale.wait_for_open_port(443)
@@ -399,6 +558,12 @@ in
         pi_a.succeed("systemctl restart tailscaled-set")
         pi_a_tailnet = pi_a.succeed("tailscale ip -4").strip()
         pi_b_tailnet = pi_b.succeed("tailscale ip -4").strip()
+
+    with subtest("the dashboard joins the tailnet"):
+        key = headscale.succeed("headscale preauthkeys create --tags tag:dashboard").strip()
+        web.wait_for_unit("tailscaled")
+        # Its resolver stays its own.
+        web.succeed(f"tailscale login --login-server=https://headscale --auth-key={key} --accept-dns=false")
 
     with subtest("the TV gets its address from apartment B's router through Pi B, and no IPv6"):
         tv.wait_until_succeeds(f"ip -4 route show default | grep -q 'via {APT_B_ROUTER_LAN} '")
@@ -456,6 +621,86 @@ in
         phone.wait_until_succeeds(ssh_port(pi_b_tailnet), timeout=60)
         pi_b.fail(ssh_port(pi_a_tailnet))
 
+    with subtest("the dashboard reads both Pis' status over the tailnet, each value as its source has it"):
+        for address in (pi_a_tailnet, pi_b_tailnet):
+            web.wait_until_succeeds(f"curl -fsS --max-time 5 http://{address}:9190/status", timeout=60)
+            # The TV's traffic has gone through the tunnel, which by now is direct.
+            wait_for_status(address, lambda reply: paths(reply) == ["direct"], timeout=90)
+
+        pi_a_status = check_against_sources(pi_a, pi_a_tailnet, "pi-a", "exit", PI_A_INTERFACES)
+        # Every gateway, which here is Pi B alone: not the phone or the dashboard.
+        [entry] = pi_a_status["tunnel"]
+        assert (entry["peer"], entry["online"], entry["path"]) == ("pi-b", True, "direct"), entry
+        # No DERP region on a direct path, and no ping from the exit node.
+        assert entry["relay"] is None and entry["latency_ms"] is None, entry
+        assert entry["rx_bytes"] > 0 and entry["tx_bytes"] > 0, entry
+
+        pi_b_status = check_against_sources(pi_b, pi_b_tailnet, "pi-b", "gateway", PI_B_INTERFACES)
+        [entry] = pi_b_status["tunnel"]
+        assert (entry["peer"], entry["online"], entry["path"]) == ("pi-a", True, "direct"), entry
+        assert entry["relay"] is None and entry["rx_bytes"] > 0 and entry["tx_bytes"] > 0, entry
+        # Its disco ping to Pi A was answered.
+        assert type(entry["latency_ms"]) in (int, float) and entry["latency_ms"] > 0, entry
+        assert pi_b_status["gateway"]["tv_port_gated"] is True and pi_b_status["gateway"]["fallback"] is False, pi_b_status
+        check_gateway_against_sources(pi_b_status)
+
+        for path in ("/", "/status/", "/metrics"):
+            code = web.succeed(f"curl -sS -o /dev/null -w '%{{http_code}}' --max-time 5 http://{pi_b_tailnet}:9190{path}")
+            assert code == "404", (path, code)
+
+    with subtest("a status request answers within 2 seconds, and its cost on each Pi is logged"):
+        for host, machine, address in (("pi-a", pi_a, pi_a_tailnet), ("pi-b", pi_b, pi_b_tailnet)):
+            wall_ms, cpu_ms = request_cost(machine, address)
+            print(f"one status request to {host}: {wall_ms:.1f} ms for the dashboard, {cpu_ms:.1f} ms of CPU on {host}, averaged over 10")
+            # Every request loads pi-status@'s unit afresh, so a setting in the wrong
+            # section would be ignored, and warned about, each time.
+            machine.fail("journalctl -b --no-pager -o cat | grep -F 'pi-status@.service' | grep -q 'Unknown key'")
+
+    with subtest("the status endpoint is open only on the tailnet, and only to the dashboard and the user's own devices"):
+        pi_b_lan = lan_address(pi_b, "br0")
+        # Apartment B's network reaches Pi B's SSH there, but not its status.
+        phone.succeed(ssh_port(pi_b_lan))
+        for machine in (phone, apt_b_router):
+            machine.fail(status_port(pi_b_lan))
+        for address in (pi_b_lan, pi_b_tailnet):
+            tv.fail(status_port(address))
+        # Nor does the internet reach Pi A's, though it reaches its SSH.
+        web.succeed(ssh_port(PI_A))
+        web.fail(status_port(PI_A))
+        # The phone, the user's own device, reads both over the tailnet.
+        for address in (pi_a_tailnet, pi_b_tailnet):
+            assert status(address, phone)["schema"] == 1
+        # The policy grants nobody else, the Pis included.
+        pi_b.fail(status_port(pi_a_tailnet))
+        pi_a.fail(status_port(pi_b_tailnet))
+
+    with subtest("the dashboard reaches the Pis' status endpoint and nothing else on the tailnet"):
+        # The two Pis are its only peers.
+        peers = json.loads(web.succeed("tailscale status --json"))["Peer"] or {}
+        assert sorted(peer["HostName"] for peer in peers.values()) == ["pi-a", "pi-b"], [peer["HostName"] for peer in peers.values()]
+        # Not their SSH, which the phone reaches.
+        for address in (pi_a_tailnet, pi_b_tailnet):
+            web.fail(ssh_port(address))
+        # Nor the phone, whose site answers on its tailnet address.
+        phone_tailnet = phone.succeed("tailscale ip -4").strip()
+        phone.succeed(f"curl -fsS --max-time 5 http://{phone_tailnet}/")
+        web.fail(f"curl -fsS --max-time 3 http://{phone_tailnet}/")
+        web.fail(f"ping -c 1 -W 2 {phone_tailnet}")
+
+    with subtest("both Pis' exit checks see Pi A's address, so Pi B's traffic leaves through Pi A"):
+        for machine, address in ((pi_a, pi_a_tailnet), (pi_b, pi_b_tailnet)):
+            machine.succeed("systemctl is-active pi-exit-check.timer")
+            machine.succeed("systemctl show -P TimersMonotonic pi-exit-check.timer | grep -q 'OnUnitActiveUSec=5min'")
+            since, site_since = machine.succeed("date +%s").strip(), web.succeed("date +%s").strip()
+            machine.succeed("systemctl start pi-exit-check")
+            # The first site refused it, and the second, the fallback, answered, seeing
+            # Pi A's address.
+            machine.succeed(f"journalctl -u pi-exit-check --since @{since} -o cat | grep -q 'site 2 of 2 answered; site 1 of 2 didn.t answer'")
+            web.succeed(f"journalctl -u exit-check-site --since @{site_since} -o cat | grep -q '^{PI_A} '")
+            just_now = machine.succeed("date -u -d '-60 sec' +%Y-%m-%dT%H:%M:%SZ").strip()
+            public_ip = status(address)["public_ip"]
+            assert public_ip is not None and public_ip["value"] == PI_A and public_ip["checked"] >= just_now, (machine.name, public_ip)
+
     with subtest("Pi A won't forward tunnel traffic to its LAN, though it can reach it itself"):
         for destination in ("10.99.0.2", "5.5.5.2"):
             pi_a.succeed(f"curl -fsS --max-time 5 http://{destination}/")
@@ -478,6 +723,24 @@ in
         tv_dns_leaves_as(APT_B_ROUTER_WAN)
         # On this path apartment B's router translates the TV's address, not Pi B.
         pi_b.succeed(f"{TV_CONNECTIONS} | grep -v {pi_b_tailnet} | grep -q .")
+        # Pi B still answers the dashboard, within 2 seconds though its ping to Pi A
+        # goes unanswered, with Pi A offline and the TV on fallback.
+        wait_for_status(pi_b_tailnet, lambda reply: [entry["online"] for entry in reply["tunnel"] or []] == [False])
+        reply, seconds = timed_status(pi_b_tailnet)
+        assert seconds < 2, seconds
+        check_status(reply, "pi-b", "gateway", PI_B_INTERFACES)
+        [entry] = reply["tunnel"]
+        assert (entry["peer"], entry["online"], entry["path"], entry["latency_ms"]) == ("pi-a", False, "offline", None), entry
+        assert reply["gateway"]["fallback"] is True, reply["gateway"]
+        check_gateway_against_sources(reply)
+        # Pi B's exit check can't go around the tunnel, so it fails, and the last
+        # result stays.
+        last_check = reply["public_ip"]
+        assert last_check is not None and last_check["value"] == PI_A, last_check
+        since = pi_b.succeed("date +%s").strip()
+        pi_b.succeed("systemctl start pi-exit-check")
+        pi_b.succeed(f"journalctl -u pi-exit-check --since @{since} -o cat | grep -q 'no site answered'")
+        assert status(pi_b_tailnet)["public_ip"] == last_check
         pi_a.succeed("systemctl start tailscaled")
         site_sees_tv_as(PI_A)
         pi_b.wait_until_fails(f"{TV_CONNECTIONS} | grep -v {pi_b_tailnet} | grep -q .", timeout=10)
@@ -501,7 +764,31 @@ in
         pi_b.succeed("systemctl stop tailscaled")
         site_sees_tv_as(APT_B_ROUTER_WAN)
         tv_is_kept_off_other_networks()
+        # Asked on Pi B itself, as the tailnet is gone: what tailscaled would have
+        # said is null, and the rest is still there.
+        reply = json.loads(pi_b.succeed("curl -fsS --max-time 5 http://127.0.0.1:9190/status"))
+        assert reply["schema"] == 1 and reply["tunnel"] is None and reply["gateway"]["fallback"] is True, reply
+        check_gateway_against_sources(reply)
+        tailscale0 = pi_b.execute("ip link show tailscale0")[0] == 0
+        assert all((value is not None) == tailscale0 for value in reply["net"]["tailscale0"].values()), (tailscale0, reply["net"])
+        assert all(is_count(value) for value in reply["net"]["br0"].values()), reply["net"]
         pi_b.succeed("systemctl start tailscaled")
+        site_sees_tv_as(PI_A)
+
+    with subtest("Pi B's tunnel is unknown, not empty, while Tailscale is down on it, and back once it's up"):
+        pi_b.succeed("tailscale down")
+        # tailscaled still runs and answers, but isn't Running.
+        pi_b.succeed("systemctl is-active tailscaled")
+        state = json.loads(pi_b.execute("tailscale status --json")[1])["BackendState"]
+        assert state != "Running", state
+        # Asked on Pi B itself, as it's off the tailnet.
+        reply = json.loads(pi_b.succeed("curl -fsS --max-time 5 http://127.0.0.1:9190/status"))
+        assert reply["schema"] == 1 and reply["tunnel"] is None, reply
+        # Its usual settings, with Pi A by address, as a stopped tailscaled can't
+        # look up its name.
+        pi_b.succeed(f"tailscale up --login-server=https://headscale --exit-node={pi_a_tailnet} --exit-node-allow-lan-access=true --accept-dns=false")
+        reply = wait_for_status(pi_b_tailnet, lambda reply: [(entry["peer"], entry["online"]) for entry in reply["tunnel"] or []] == [("pi-a", True)])
+        check_status(reply, "pi-b", "gateway", PI_B_INTERFACES)
         site_sees_tv_as(PI_A)
 
     with subtest("the TV moves if Pi A stays on the tailnet but stops forwarding, and moves back"):
@@ -556,13 +843,36 @@ in
         pi_b.succeed("systemctl stop nftables")
         pi_b.succeed("ip link show eth2 | grep -q 'state DOWN'")
         tv.fail(FIND_WEB)
+        # tv-port-gate stops with nftables, so the dashboard sees the port ungated.
+        reply = wait_for_status(pi_b_tailnet, lambda reply: reply["gateway"]["tv_port_gated"] is False, timeout=10)
+        assert reply["gateway"]["tv_port"]["link"] is False, reply["gateway"]
+        check_gateway_against_sources(reply)
         pi_b.succeed("systemctl start nftables")
         site_sees_tv_as(PI_A, timeout=60)
         tv_and_phone_reach_each_other()
+        reply = wait_for_status(pi_b_tailnet, lambda reply: reply["gateway"]["tv_port_gated"] is True, timeout=10)
+        check_gateway_against_sources(reply)
 
     with subtest("the site saw only Pi A from Pi B's power cut on, and never anything but Pi A or apartment B's connection"):
         site_only_saw_pi_a_since(before_pi_b_power_cut)
         web.fail(f"journalctl -u whoami -o cat | grep -E '^[0-9.]+ ' | grep -v -e '^{PI_A} ' -e '^{APT_B_ROUTER_WAN} ' | grep -q .")
+
+    with subtest("the dashboard sees TV B's port ungated once its bridge rules are gone, and gated once they're back"):
+        pi_b.succeed("nft delete table bridge tv-port")
+        # tv-port-gate, still running, finds the rule gone and takes the port down.
+        wait_for_status(pi_b_tailnet, lambda reply: reply["gateway"]["tv_port_gated"] is False, timeout=10)
+        pi_b.succeed("systemctl is-active tv-port-gate")
+        pi_b.wait_until_succeeds("ip link show eth2 | grep -q 'state DOWN'", timeout=10)
+        reply = wait_for_status(pi_b_tailnet, lambda reply: reply["gateway"]["tv_port"]["link"] is False, timeout=10)
+        check_gateway_against_sources(reply)
+        # Loading Pi B's tables again brings the rule back, then the port and the
+        # TV's tunnel.
+        pi_b.succeed("systemctl reload nftables")
+        reply = wait_for_status(
+            pi_b_tailnet, lambda reply: reply["gateway"]["tv_port_gated"] is True and reply["gateway"]["tv_port"]["link"] is True, timeout=30
+        )
+        check_gateway_against_sources(reply)
+        site_sees_tv_as(PI_A, timeout=60)
 
     with subtest("the Pi A check above really depends on Pi A's firewall"):
         pi_a.succeed("nft delete table inet tunnel-exit")

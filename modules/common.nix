@@ -4,6 +4,8 @@ let
   cfg = config.tunnel;
 in
 {
+  imports = [ ./status.nix ];
+
   options.tunnel = {
     wan = lib.mkOption {
       type = lib.types.str;
