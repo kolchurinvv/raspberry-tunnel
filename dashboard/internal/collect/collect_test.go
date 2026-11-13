@@ -165,6 +165,11 @@ func quiet() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)
 
 func newRig(t *testing.T) *rig {
 	t.Helper()
+	return newRigLog(t, quiet())
+}
+
+func newRigLog(t *testing.T, log *slog.Logger) *rig {
+	t.Helper()
 	r := &rig{t: t, exit: &fakePi{status: exitStatus()}, gw: &fakePi{status: gatewayStatus()}, routes: map[string]string{}}
 	for addr, pi := range map[string]*fakePi{"100.101.102.1:9190": r.exit, "100.101.102.2:9190": r.gw} {
 		srv := httptest.NewServer(pi)
@@ -192,7 +197,7 @@ func newRig(t *testing.T) *rig {
 	}
 	r.client = &http.Client{Transport: &http.Transport{DialContext: dial, DisableKeepAlives: true}}
 	r.col = collect.New(collect.Options{
-		Discoverer: r.disc, Store: st, Log: quiet(), Node: fakeNode{}, Timeout: 300 * time.Millisecond, Client: r.client,
+		Discoverer: r.disc, Store: st, Log: log, Node: fakeNode{}, Timeout: 300 * time.Millisecond, Client: r.client,
 	})
 	return r
 }
@@ -549,6 +554,23 @@ func TestExitTunnelStaleDuplicate(t *testing.T) {
 		r.col.Cycle(ctx, t0.Add(30*time.Second))
 		if a := r.samples()["pi-a"][1]; !near(a.TrafficMbps, 2) {
 			t.Errorf("stale entry first %v: exit traffic = %v, want 2 Mbit/s", staleFirst, a.TrafficMbps)
+		}
+	}
+}
+
+// A Pi's body is never logged, its error text included: only the code.
+func TestErrorAnswerLogsOnlyTheCode(t *testing.T) {
+	var buf bytes.Buffer
+	r := newRigLog(t, slog.New(slog.NewTextHandler(&buf, nil)))
+	r.gw.setMode("500")
+	r.col.Cycle(context.Background(), t0)
+	log := buf.String()
+	if !strings.Contains(log, "HTTP 500") {
+		t.Errorf("log lacks the code: %s", log)
+	}
+	for _, leak := range []string{"tailscaled", "100.101.102.1", "not answering"} {
+		if strings.Contains(log, leak) {
+			t.Errorf("log holds %q: %s", leak, log)
 		}
 	}
 }

@@ -191,31 +191,6 @@ func Parse(body []byte) (*Status, error) {
 	return s, nil
 }
 
-// ParseError reads the body of a 500 answer, {"schema": 1, "error": "..."},
-// and returns its message. The message comes from the Pi and may name local
-// details, so it belongs in the dashboard's own log, never on the page.
-func ParseError(body []byte) (string, error) {
-	d := &decoder{}
-	top := d.object("$", body)
-	if d.err != nil {
-		return "", d.err
-	}
-	if top == nil {
-		return "", &FieldError{Path: "$", Msg: "is null"}
-	}
-	if err := checkSchema(d, top); err != nil {
-		return "", err
-	}
-	msg := d.str("error", d.field(top, "$", "error"))
-	if d.err != nil {
-		return "", d.err
-	}
-	if msg == nil {
-		return "", &FieldError{Path: "error", Msg: "is null"}
-	}
-	return *msg, nil
-}
-
 func checkSchema(d *decoder, top map[string]json.RawMessage) error {
 	raw := d.field(top, "$", "schema")
 	if d.err != nil {

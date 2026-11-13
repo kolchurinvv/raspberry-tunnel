@@ -499,13 +499,8 @@ func (c *Collector) fetch(ctx context.Context, p Peer) answer {
 		return fail(model.OutcomeInvalid, fmt.Errorf("answer over %d bytes", maxBody))
 	}
 	if resp.StatusCode != http.StatusOK {
-		// The error text is the Pi's own; it goes to the log, scrubbed of
-		// addresses, and never onto the page.
-		why := fmt.Errorf("HTTP %d", resp.StatusCode)
-		if msg, perr := schema.ParseError(body); perr == nil {
-			why = fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(msg, 200))
-		}
-		return fail(model.OutcomeHTTPError, why)
+		// Only the code: a Pi's body, its error text included, is never logged.
+		return fail(model.OutcomeHTTPError, fmt.Errorf("HTTP %d", resp.StatusCode))
 	}
 	if mt, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type")); err != nil || mt != "application/json" {
 		return fail(model.OutcomeInvalid, errors.New("content type isn't application/json"))

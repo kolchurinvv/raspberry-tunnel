@@ -227,19 +227,6 @@ func TestParseErrorDoesNotEchoAddress(t *testing.T) {
 	}
 }
 
-func TestParseErrorBody(t *testing.T) {
-	msg, err := ParseError([]byte(`{"schema": 1, "error": "tailscaled not answering"}`))
-	if err != nil || msg != "tailscaled not answering" {
-		t.Errorf("ParseError = %q, %v", msg, err)
-	}
-	if _, err := ParseError([]byte(`{"schema": 2, "error": "x"}`)); err == nil {
-		t.Error("ParseError accepted schema 2")
-	}
-	if _, err := ParseError([]byte(`{"schema": 1}`)); err == nil {
-		t.Error("ParseError accepted a missing error")
-	}
-}
-
 // NixOS allows underscores in host names, and an odd name costs only itself,
 // never the whole answer: the page names Pis by their tailnet names.
 func TestParseLenientNames(t *testing.T) {
