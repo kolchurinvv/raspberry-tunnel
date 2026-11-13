@@ -50,7 +50,9 @@ roles and a real Headscale in VMs, then checks where TV B's traffic goes and wha
 can't reach, and that a phone on apartment B's network can find TV B and connect
 to it. It also checks the move to apartment B's connection and back when the
 tunnel fails, and recovery after a power cut, the TV adapter being replugged, and
-`systemd-networkd` restarting.
+`systemd-networkd` restarting. The site on the internet doubles as the dashboard: it
+reads both Pis' status endpoint over the tailnet, checks each value against what the
+Pi itself reads, also while things fail, and logs what one request costs.
 
 It doesn't cover connecting through CGNAT, the ARM images, the Pi's network hardware
 or USB adapter, real speed, or real casting apps.
@@ -129,6 +131,44 @@ apartment B, where step 9 passed. Passing
 9. Check TV B is on the tunnel, because it also works without it, for example if Pi
    B's key expired before login. With the TV online and Pi B up for a few minutes,
    `ip rule show priority 5260` on Pi B should print nothing.
+
+## Status endpoint
+
+Each Pi answers `GET /status` on TCP port 9190 with its health as JSON, for the
+public dashboard (D2). Only the tailnet reaches it, never TV B's port or either
+apartment's network, and the Headscale policy lets in only the dashboard
+(`tag:dashboard`) and your own devices (`tunnel@`). Nothing runs between requests:
+systemd starts one short-lived, unprivileged script per connection, which reads
+`/proc` and `/sys`, asks tailscaled's local API, and answers. On a gateway it also
+sends one disco ping to the exit node. The VM test logs what a request costs.
+
+From one of your own devices on the tailnet, with the Pi's tailnet address, which
+`tailscale ip -4` prints on the Pi:
+
+```sh
+curl -s http://<pi-tailnet-address>:9190/status | jq .
+```
+
+D2's contract defines every field. In short:
+
+- A value the Pi couldn't read is `null`. In this setup `undervoltage_events`
+  always is: nothing counts those without privileges.
+- Counters are cumulative: CPU time in `USER_HZ` ticks (usually 100 a second),
+  memory in KiB, traffic in bytes. One that drops was reset, by a reboot, an
+  interface coming back or a WireGuard peer being recreated.
+- `time` is the Pi's clock, which can be wrong for a while after boot, as the Pi
+  has no battery-backed clock.
+- `tunnel` lists the other ends of the tunnel: Pi A on Pi B, and every gateway on
+  Pi A. Each one's `path` is `direct`, `peer_relay`, `derp` (with the DERP region in
+  `relay`), `idle` or `offline`.
+- `public_ip` is where the Pi's own traffic last left from, which every Pi checks
+  every 5 minutes through `tunnel.publicIpUrl`. Pi B's should be Pi A's. It's
+  apartment A's real address, so keep the output out of anything public.
+
+To start using it: load `headscale/policy.json` on the Headscale server, then
+install each Pi's new config (`just update-nix-on a`, then `just reboot-pi a`, and
+the same for `b`). The dashboard joins with a key from
+`headscale preauthkeys create --tags tag:dashboard`.
 
 ## Things to get right
 
