@@ -26,8 +26,15 @@ const (
 	TrafficFullMbps = 50.0 // stands in until the tunnel's real throughput is measured
 	TempLow         = 20.0
 	TempHigh        = 85.0
-	TempHot         = 60.0 // where the Pi lowers its clock
-	PctHot          = 85.0 // CPU, memory and SD card
+	// TempClock is the Pi 3 B+'s soft limit: from here it runs at 1.2 GHz
+	// instead of 1.4. The temperature chart draws a line there.
+	TempClock = 60.0
+	// TempLimit is the Pi's hard limit: it slows further as it nears it.
+	TempLimit = 85.0
+	// TempHot is where the temperature gauge turns amber and the banner warns
+	// (D4). It sits above TempClock because a Pi in an enclosure idles past it.
+	TempHot = 70.0
+	PctHot  = 85.0 // CPU, memory and SD card
 	// KeyWarnBefore is how soon a key expiry becomes a check failure.
 	KeyWarnBefore = 30 * 24 * time.Hour
 	// StaleAfter is how old the latest poll may be before the page stops
@@ -383,9 +390,10 @@ func (st *state) banner() Banner {
 		if l, v, note := powerOf(&s); l == Warn {
 			issues = append(issues, issue{Warn, x.Name + " is short of power", x.Name + "'s power: " + strings.ToLower(v) + ", " + note + "."})
 		}
-		if s.TempC != nil && *s.TempC >= TempHot {
+		if s.TempC != nil && isHot(*s.TempC) {
 			issues = append(issues, issue{Warn, x.Name + " is running hot",
-				x.Name + " is at " + degC(s.TempC) + ". From 60 °C it lowers its clock."})
+				x.Name + " is at " + degC(s.TempC) + ". It lowers its clock from " + deg(TempClock) +
+					" and slows further as it nears " + deg(TempLimit) + "."})
 		}
 	}
 

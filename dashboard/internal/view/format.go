@@ -65,6 +65,9 @@ func degC(v *float64) string {
 	return fmt.Sprintf("%.0f °C", *v)
 }
 
+// deg formats a fixed temperature, such as a threshold.
+func deg(v float64) string { return degC(&v) }
+
 func pctText(v *float64) string {
 	if v == nil {
 		return dash
