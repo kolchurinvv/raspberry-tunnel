@@ -45,7 +45,8 @@ Every extra entrypoint is a file somebody has to recognise as generated.
   deltas: scratchpad goes in repo-local `.tmp/` not `/tmp`; CI watching runs
   under the Monitor tool; skills/plan-mode/task conventions. A repo-local skill
   that implements a module (e.g. an adversarial-review skill for `ai/08`) is
-  named in Bindings, so agents in other tools know it exists.
+  named in Bindings, so agents in other tools know it exists. It points at the
+  module for the rules instead of restating them, so an update reaches it.
 - **Permissions** are the autonomy lever. `ai/templates/claude.settings.json`
   shows a yolo-but-guarded profile: broad `allow`, with a `deny` list that
   protects baselines and forbids writes to sibling repos. Autonomy is granted
@@ -117,9 +118,15 @@ The definitions in `ai/agents/` carry only `name` and `description`, so any tool
 can use them. Any agent can take on one of them by being told to follow the
 file. A tool with sub-agent support can also load them as its own:
 
-- **Claude Code:** copy the file into `.claude/agents/`, adding `model`,
-  `color` or `memory` if you want them. Track the copy.
-- **Other tools:** use the tool's own agent or mode directory, if it has one.
+- **Claude Code:** add a file to `.claude/agents/` with the definition's
+  `name` and `description`, plus `model`, `color`, `memory` or `tools` if you
+  want them, and a body that loads the kit's file rather than copying it:
+  `Read ai/agents/<name>.md in full and act as the agent it defines. Where it and
+  this file differ, it wins.` Track the file. A copied body keeps the old rules
+  after every update; only the `description` is a copy here, and an amendment
+  that changes it says so (`AMENDMENTS.md`).
+- **Other tools:** use the tool's own agent or mode directory, if it has one,
+  and load the kit's file from it the same way where the tool allows.
 
 ## Where tools keep what their agents learn
 

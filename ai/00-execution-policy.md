@@ -149,8 +149,9 @@ checked and how:
    the repository requires it before a PR (`ai/01` § The gate).
 4. **No gate was loosened** without the user's approval recorded in the commit
    (rule 4, `ai/11`).
-5. **The review-fix loop is closed:** every finding fixed, rebutted with
-   evidence, or held for a ruling (`ai/08`).
+5. **The review-fix loop is closed:** every finding of the one review fixed,
+   rebutted with evidence, or held for a ruling (`ai/08`). A clean second
+   review is not a condition.
 6. **The status docs are current** (rule 5).
 7. **CI is green on the pushed head,** every job, watched to the end (rule 6).
 

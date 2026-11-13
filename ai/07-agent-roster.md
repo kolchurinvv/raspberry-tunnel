@@ -63,6 +63,9 @@ re-author them here.
 
 For comprehensive work — broad audits, migrations, "be exhaustive" reviews —
 structure it as fan-out → verify → synthesize: parallel finders, each finding
-adversarially verified by independent skeptics, then a synthesis pass, looping
-until rounds come up dry. This is a deliberate, heavier mode; use it when the
-user asks for thoroughness or opts into orchestration, not for quick checks.
+adversarially verified by independent skeptics, then a synthesis pass. Agree on
+the number of passes with the user up front. Don't loop until a pass comes up
+dry: fresh finders always find something (`ai/08` § Why one pass). This is a
+deliberate, heavier mode; use it when the user asks for thoroughness or opts
+into orchestration, not for quick checks. It is never the review of a single
+change, which stays one pass (`ai/08` § The review-fix loop).

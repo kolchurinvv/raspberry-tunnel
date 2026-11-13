@@ -6,16 +6,21 @@
 #                              <repo>/ai/.kit-manifest, and regenerate the core block in
 #                              <repo>/AGENTS.md from ai/CORE.md. AGENTS.md is created if it is
 #                              missing, and gets the markers and the Bindings skeleton if it
-#                              lacks them. Finishes by running --check on the result.
+#                              lacks them. Of the files the earlier manifest listed that this kit
+#                              no longer ships, it deletes only those ai/.kit-retired names.
+#                              Finishes by running --check on the result.
 #                              Run it from an ord-ai-n checkout. It refuses to overwrite what
 #                              it didn't write (an ai/ with no manifest, uncommitted edits
 #                              under ai/), or to create AGENTS.md outside a repository's root,
 #                              unless --force is given.
-#   ai/sync.sh --check <repo>  Change nothing. Exit 1 if <repo>/ai/ differs from its manifest or
+#   ai/sync.sh --check <repo>  Change nothing. Exit 1 if <repo>/ai/ differs from its manifest, the
+#                              manifest's seal is missing or doesn't match (a hand edit), or
 #                              <repo>/AGENTS.md's core block differs from ai/CORE.md. Exit 3 if
 #                              only the Bindings are unfinished: a placeholder in the skeleton
 #                              (ai/INSTALL.md) has no row, a row is blank or still says TODO,
-#                              or there are no rows.
+#                              or there are no rows; or ai/AMENDMENTS.md has entries newer than
+#                              the Bindings row "Amendments reconciled | Through A<n>" (or there
+#                              is no such row), which an update leaves for the repo to reconcile.
 #                              Cheap enough for CI: the drift guard that holds whichever
 #                              agent or model made the change.
 #                              This is the only mode a vendored copy runs.
@@ -37,12 +42,33 @@ export LC_ALL=C
 BEGIN='<!-- ord-ai-n:core:begin -->'
 END='<!-- ord-ai-n:core:end -->'
 MANIFEST=ai/.kit-manifest
+AMENDMENTS=ai/AMENDMENTS.md
+RETIRED=ai/.kit-retired
 
 die() { echo "sync: $*" >&2; exit 1; }
 usage() { echo "usage: ai/sync.sh [--check | --force] <repo>" >&2; exit 2; }
 sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
 # The file paths a manifest lists, one per line.
 listed() { grep -v '^#' "$1" | sed 's/^[0-9a-f]*  //' || true; }
+# The digest of a manifest's file lines, which the installer records as its seal. The seal is a
+# tripwire for a hand edit, not proof of what the kit shipped: anyone can recompute it.
+seal_of() { { grep -v '^#' "$1" || true; } | sha | cut -d' ' -f1; }
+# Whether a manifest's seal matches its file lines: sealed, unsealed (no seal line), or broken.
+manifest_seal() {
+  local recorded
+  recorded=$(sed -n 's/^# seal: //p' "$1" | tail -n 1)
+  if [ -z "$recorded" ]; then echo unsealed
+  elif [ "$recorded" = "$(seal_of "$1")" ]; then echo sealed
+  else echo broken
+  fi
+}
+# The paths the kit used to ship and has retired, one per line: the only files an update deletes.
+retired() { [ ! -f "$1" ] || grep -v '^#' "$1" | grep . || true; }
+# Whether a file still has the content the target's manifest recorded for it.
+unchanged() {  # $1 = path inside the target
+  (cd "$target" && awk -v f="$1" '!/^#/ && substr($0, 67) == f' "$MANIFEST" |
+    sha -c --quiet - >/dev/null 2>&1)
+}
 # Whether every file the target's manifest lists is byte for byte what was installed.
 matches_manifest() {
   [ -f "$target/$MANIFEST" ] &&
@@ -61,9 +87,14 @@ skeleton_placeholders() {
 }
 # Of those, the ones AGENTS.md never mentions after the core block, i.e. in its Bindings.
 unbound() {  # $1 = AGENTS.md, $2 = ai/INSTALL.md, $3 = line of the end marker
+  local after p
+  after=$(tail -n "+$(($3 + 1))" "$1")
   skeleton_placeholders "$2" | while IFS= read -r p; do
     [ -n "$p" ] || continue
-    tail -n "+$(($3 + 1))" "$1" | grep -qF "\`$p\`" || echo "$p"
+    # A pattern match in the shell, not grep: a pipe into grep -q let the writer die of SIGPIPE,
+    # which pipefail turned into a row reported missing, and a here-string needs a writable temp
+    # directory for large text (always, on bash before 5.1).
+    [[ $after == *"\`$p\`"* ]] || echo "$p"
   done
 }
 # Bindings rows still to fill in: their value is blank or starts with the skeleton's TODO. The
@@ -144,6 +175,37 @@ has_bindings() {
     !fence && /^#+[ \t]/ && tolower($0) ~ /bindings/ { found = 1 }
     END { exit !found }' "$agents"
 }
+# The highest entry number in an amendments log ("## A<n> " headings); 0 if it has none.
+latest_amendment() {
+  [ -f "$1" ] || { echo 0; return 0; }
+  awk '/^## A[0-9]+ / { n = substr($2, 2) + 0; if (n > m) m = n } END { print m + 0 }' "$1"
+}
+# Entries out of order in an amendments log: each must be numbered below the one above it, so the
+# log runs newest first with every number once.
+misnumbered() {
+  [ ! -f "$1" ] || awk '/^## A[0-9]+ / {
+      n = substr($2, 2) + 0
+      if (seen && n >= prev) print "A" n " comes after A" prev
+      prev = n; seen = 1
+    }' "$1"
+}
+# The entries numbered above $2, one "A<n> (<date>): <rule>" line each, newest first.
+amendments_after() {  # $1 = the amendments log, $2 = the number reconciled through
+  [ ! -f "$1" ] ||
+    awk -v n="$2" '/^## A[0-9]+ / { if (substr($2, 2) + 0 > n) print substr($0, 4) }' "$1"
+}
+# The number in the "Amendments reconciled" Bindings row (its first A<n>); "none" if the row
+# names no number, and nothing if there is no such row.
+reconciled_through() {  # $1 = AGENTS.md, $2 = line of the end marker
+  awk -F'|' -v from="$2" '
+    NR <= from { next }
+    /^[ \t]*(```|~~~)/ { fence = !fence; next }
+    fence { next }
+    /^\|/ && tolower($2) ~ /amendments reconciled/ {
+      if (match($3, /A[0-9]+/)) print substr($3, RSTART + 1, RLENGTH - 1) + 0; else print "none"
+      exit
+    }' "$1"
+}
 
 check=0
 force=0
@@ -188,8 +250,43 @@ if [ "$check" = 1 ]; then
     echo "$todo" | sed 's/^/  /' >&2
     unfinished=1
   fi
+  # A repeated or out-of-order number would hide an entry from every repository past it.
+  bad=$(misnumbered "$AMENDMENTS")
+  if [ -n "$bad" ]; then
+    echo "sync: $AMENDMENTS must list entries newest first, each number once (its § Numbers):" >&2
+    while IFS= read -r line; do echo "  $line"; done <<<"$bad" >&2
+    status=1
+  fi
+  # Rule changes an update brought that the repository's own text may still contradict. They
+  # hold the check, like an unfilled row, until the Bindings say they are reconciled.
+  latest=$(latest_amendment "$AMENDMENTS")
+  if [ "$latest" -gt 0 ]; then
+    through=$(reconciled_through AGENTS.md "$end_line")
+    case "$through" in
+      "") echo "sync: AGENTS.md's Bindings have no 'Amendments reconciled' row, so every amendment counts." >&2
+          through=0 ;;
+      none) echo "sync: AGENTS.md's 'Amendments reconciled' row names no A<number>, so every amendment counts." >&2
+          through=0 ;;
+    esac
+    if [ "$through" -lt "$latest" ]; then
+      echo "sync: rules the kit changed that this repository hasn't reconciled yet ($AMENDMENTS):" >&2
+      amendments_after "$AMENDMENTS" "$through" | while IFS= read -r entry; do echo "  $entry"; done >&2
+      echo "      Fix what each entry lists under 'Check outside ai/' (ai/INSTALL.md § Update), then set" >&2
+      echo "      the Bindings row to: | Amendments reconciled | Through A$latest |" >&2
+      unfinished=1
+    fi
+  fi
   # The kit's own checkout has no manifest; a vendored copy always does.
   if [ -f "$MANIFEST" ]; then
+    # This script and a sealed manifest are always written by the same sync, so a missing seal
+    # is an edit too.
+    seal=$(manifest_seal "$MANIFEST")
+    if [ "$seal" != sealed ]; then
+      echo "sync: $MANIFEST was edited by hand (its seal is $seal). Only the installer writes it. Move" >&2
+      echo "      this repository's own files out of ai/, to where the Bindings' <project-docs> row says" >&2
+      echo "      (ai/06), commit the move, and run the install line again (ai/INSTALL.md § Update)." >&2
+      status=1
+    fi
     if ! out=$(grep -v '^#' "$MANIFEST" | sha -c --quiet - 2>&1); then
       echo "sync: vendored kit files were edited in place; change them in ord-ai-n and re-sync:" >&2
       echo "$out" >&2
@@ -206,8 +303,10 @@ if [ "$check" = 1 ]; then
     fi
     extra=$(comm -13 <(listed "$MANIFEST" | sort) <(echo "$present" | sort) | grep . || true)
     if [ -n "$extra" ]; then
-      echo "sync: files under ai/ that the kit does not ship (repo-specific files belong outside ai/):" >&2
+      echo "sync: files under ai/ that the kit does not ship:" >&2
       echo "$extra" | sed 's/^/  /' >&2
+      echo "      ai/ is the kit's, and an update replaces it. Move them where the Bindings' <project-docs>" >&2
+      echo "      row says (ai/06). Don't list them in $MANIFEST: only the installer writes it." >&2
       status=1
     fi
   fi
@@ -256,15 +355,27 @@ bindings=
 if ! has_bindings; then
   bindings=$(skeleton "$kit_ai/INSTALL.md")
   [ -n "$bindings" ] || die "no Bindings skeleton in $kit_ai/INSTALL.md"
+  # New Bindings have no older text to reconcile: start the row at the newest amendment.
+  newest=$(latest_amendment "$kit_ai/$(basename "$AMENDMENTS")")
+  bindings=${bindings//Through A<n>/Through A$newest}
 fi
 
 if [ "$target" != "$kit_root" ]; then
   if [ -f "$target/$MANIFEST" ]; then
-    # Drop files an earlier sync copied that the kit no longer ships.
+    # Files the earlier manifest lists that this kit doesn't ship. Delete one only if the kit says
+    # it retired that path and the file is as installed. A line added by hand may name the
+    # repository's own file, so anything else is kept, and the closing --check names it.
+    gone=$(retired "$kit_ai/$(basename "$RETIRED")")
     comm -23 <(listed "$target/$MANIFEST" | sort) <(echo "$files" | sort) |
       while IFS= read -r f; do
-        [ -n "$f" ] || continue
-        rm -f "$target/$f" && echo "sync: removed $f (no longer in the kit)"
+        [ -n "$f" ] && [ -e "$target/$f" ] || continue
+        if ! grep -qxF "$f" <<<"$gone"; then
+          echo "sync: kept $f: the manifest listed it, but the kit neither ships nor retired it" >&2
+        elif ! unchanged "$f"; then
+          echo "sync: kept $f: the kit retired it, but it was changed after it was installed" >&2
+        else
+          rm -f "$target/$f" && echo "sync: removed $f (the kit retired it)"
+        fi
       done
   fi
   while IFS= read -r f; do
@@ -274,9 +385,11 @@ if [ "$target" != "$kit_root" ]; then
   {
     echo "# ord-ai-n agent kit, vendored by ai/sync.sh. Do not edit the files listed here:"
     echo "# change them in ord-ai-n and re-run its installer (ai/INSTALL.md). Verify: ai/sync.sh --check ."
+    echo "# Only the installer writes this file. The seal on its last line makes a hand edit fail --check."
     echo "# source: $version"
     (cd "$target" && while IFS= read -r f; do sha "$f"; done <<<"$files")
   } >"$target/$MANIFEST"
+  echo "# seal: $(seal_of "$target/$MANIFEST")" >>"$target/$MANIFEST"
 fi
 
 # Regenerate the core block. Write through the existing file to keep its permissions.
@@ -302,7 +415,7 @@ verified=0
 bash "$target/ai/sync.sh" --check "$target" || verified=$?
 case "$verified" in
   0) ;;
-  3) echo "sync: the kit is in place; fill in the rows named above, then run ai/sync.sh --check ." ;;
+  3) echo "sync: the kit is in place; finish what is named above (Bindings rows to fill in, amendments to reconcile), then run ai/sync.sh --check ." ;;
   *) die "the result failed its own --check" ;;
 esac
 case "$version" in

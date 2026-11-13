@@ -224,9 +224,16 @@ balanced, or credit a diff for being small and tidy.
 
 A review only helps if every finding gets an answer. The loop:
 
-1. **Review before CI.** Run the adversarial pass when the author believes the
-   change is ready, before pushing it for CI. Each fix after a push costs a CI
-   run; a review costs none.
+1. **Review before CI, once the author's own checks are done.** Run the
+   adversarial pass when the change is ready, before pushing it for CI. Each fix
+   after a push costs a CI run; a review costs none. Ready means the author has
+   already put its own tests through every Rule 5 check: each fails without the
+   change, no test that pinned the old behaviour was deleted or loosened, each
+   assertion pins the invariant rather than today's output, and every read-back
+   has actually run against the real store. It has also kept them on real
+   dependencies, not a stub around the code under test (`ai/10`). A review that
+   finds what the author could have run spends its one pass on the author's
+   work.
 2. **One fresh reviewer.** Start the adversary in a context that didn't write
    the change (§ Wiring it in). Give it the request in the requester's words
    and the diff range, nothing else.
@@ -245,21 +252,41 @@ A review only helps if every finding gets an answer. The loop:
 4. **The orchestrator checks the answers against the findings list.** Every
    finding has an answer, every "fixed" points at a commit, and every rebuttal
    carries evidence. Never close the loop on the author's say-so.
-5. **Stop when the review is answered in full.** A second full round is the
-   user's call, not automatic. The exception: if the fixes changed the shape of
-   the change (new files, a different approach), say so and ask.
-6. **Record it.** The PR body carries a `Reviewed:` line (what reviewed it,
+5. **One pass, then stop.** The loop ends when this review's findings are
+   answered in full. Don't send the fixed change back for another review to
+   prove it clean: a further round is the user's call, never automatic, and
+   never a condition for being done. If the fixes changed the shape of the
+   change (new files, a different approach), say so and let the user decide.
+   A round the user buys covers the fixes' delta, not the whole change again,
+   and doesn't reopen a finding closed by an accepted rebuttal.
+6. **A defect class that keeps coming back is a design question.** When several
+   findings, or a round the user bought, name the same kind of defect in new
+   places (the same race in another handler, the same missing check on another
+   path), patching each instance is fixing at the wrong level (rule 4). Stop
+   patching. Hand the user the structural fix and what it costs, as a
+   needs-a-ruling hold.
+7. **Record it.** The PR body carries a `Reviewed:` line (what reviewed it,
    against which commit, with what verdict) and the accepted residuals.
 
 The author writes the fixes. Not the reviewer, which never edits (§ Anti-scope),
 and not the orchestrator, which would then be an author nobody reviewed.
 Docs-only and mechanical changes skip the loop (§ When it applies).
 
-**Automated loops**, where a bot implements, reviews and remediates with no
-human in each round, need hard edges:
+**Why one pass.** Reviewing again until the reviewer finds nothing looks like
+test-driven development applied to review. It doesn't converge. A fresh
+reviewer rebuilds its picture of the change every round and always finds
+something: the real defects come out in the first round or two, and later rounds
+restate closed findings, find fault with the previous round's fixes, or reach
+into code nobody touched. The count of new findings stays flat or grows while
+every round costs a full review and a fix pass. What the loop keeps is the part
+that pays: one independent look, and an answer to every finding.
 
-- **A round cap.** Two reviews is plenty. At the cap, stop and hand the change
-  to a human.
+**Automated loops**, where a bot implements, reviews and remediates with no
+human reachable in each round, need hard edges. An agent working in a session
+with a person is not one: the person is there to decide on another round.
+
+- **A round cap.** Two reviews at most: the first, and one re-review of the
+  remediation. At the cap, stop and hand the change to a human.
 - **No auto-remediation of a `BLOCK`.** A `BLOCK`, or a change that doesn't do
   what was asked, goes to a human.
 - **Fail closed.** A missing or malformed verdict counts as `BLOCK`.

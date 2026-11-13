@@ -65,11 +65,13 @@ These are the rules that change turn-to-turn behavior. The modules expand each.
    on-disk memory are tracked files, not per-checkout scratch — anything that
    cleans or re-syncs a checkout will otherwise silently delete them. See
    `ai/05`.
-10. **Agent-authored work gets an adversarial pass before it lands,** and every
+10. **Agent-authored work gets one adversarial pass before it lands,** and every
     finding gets an answer: fixed, rebutted with evidence, or held for the user's
-    ruling. The pass's first question is "is this the change that was asked
-    for?", the failure no gate can see, because gates check a change against
-    itself. A green pipeline is a claim to verify, not evidence. See `ai/08`.
+    ruling. Another round is the user's call: reviewing until the reviewer finds
+    nothing doesn't converge. The pass's first question is "is this the change
+    that was asked for?", the failure no gate can see, because gates check a
+    change against itself. A green pipeline is a claim to verify, not evidence.
+    See `ai/08`.
 
 > **Numbering is a contract.** Items 1–8 mirror `ai/00-execution-policy.md`'s
 > rule numbers exactly, so "rule 4" means the same thing in every repo and every
@@ -99,6 +101,21 @@ names this repository's). Nothing else — do not infer choices from sibling rep
 prior conventions, or training priors. If the decision records are silent, ask
 the user. This block governs *how* you work; the decision records govern *what*
 you build.
+
+Working rules change the same way. When a failure suggests a new rule, propose
+it to the user and say where it would live: the Bindings, a decision record,
+memory, or a lesson for the kit. A "from now on" in a reply binds nothing, and
+no later session will see it. A rule changes when the user rules on it, never on
+an agent's say-so.
+
+### `ai/` is the kit's
+
+The installer writes `ai/`, and every update replaces it. Never add, edit,
+rename or delete a file there, and never edit `ai/.kit-manifest` to make the
+check pass: an update may overwrite or delete whatever the kit didn't ship. This
+repository's own docs (runbooks, specs, test plans, checklists) go where
+`<project-docs>` says, named the way this repository names things rather than
+after the kit's numbered modules. See `ai/06`.
 <!-- ord-ai-n:core:end -->
 
 ## Bindings
