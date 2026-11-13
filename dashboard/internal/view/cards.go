@@ -94,6 +94,7 @@ func (g *gauges) pct(label string, v *float64, big bool) Gauge {
 	if v == nil {
 		return g.none(label, big)
 	}
+	v = clampPct(v)
 	return g.make(label, pctText(v), "", *v, *v >= PctHot, big)
 }
 

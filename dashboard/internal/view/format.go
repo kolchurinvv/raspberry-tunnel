@@ -188,3 +188,13 @@ func joinAnd(xs []string) string {
 		return strings.Join(xs[:len(xs)-1], ", ") + " and " + xs[len(xs)-1]
 	}
 }
+
+// clampPct keeps a percentage between 0 and 100, a backstop for the page:
+// the collector already drops figures it can't trust.
+func clampPct(v *float64) *float64 {
+	if v == nil {
+		return nil
+	}
+	c := clamp(*v, 0, 100)
+	return &c
+}

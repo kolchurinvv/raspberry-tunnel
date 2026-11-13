@@ -591,7 +591,10 @@ func (c *Collector) sample(ts time.Time, a answer, exitIP *netip.Addr) model.Sam
 	c.counters[s.Host] = cur
 	dt := ts.Sub(prev.ts).Seconds()
 	if hasPrev && dt > 0 && dt <= (3*model.Interval).Seconds() {
-		if prev.cpuKnown && cur.cpuKnown && cur.cpuTotal > prev.cpuTotal && cur.cpuBusy >= prev.cpuBusy {
+		// iowait can go down, so the busy ticks can outrun the total: that
+		// interval has no CPU figure rather than one over 100%.
+		if prev.cpuKnown && cur.cpuKnown && cur.cpuTotal > prev.cpuTotal && cur.cpuBusy >= prev.cpuBusy &&
+			cur.cpuBusy-prev.cpuBusy <= cur.cpuTotal-prev.cpuTotal {
 			s.CPUPct = pct(float64(cur.cpuBusy-prev.cpuBusy), float64(cur.cpuTotal-prev.cpuTotal))
 		}
 		s.TrafficMbps = trafficRate(a.peer.Role, st.Tunnel, prev.tunnelSum, cur.tunnelSum, dt)

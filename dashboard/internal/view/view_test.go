@@ -251,6 +251,12 @@ func TestGauges(t *testing.T) {
 	if x := g.traffic(ptr(80.0)); x.Pct != 100 {
 		t.Errorf("80 Mbit/s = %d%%, want 100", x.Pct)
 	}
+	if x := g.pct("CPU", ptr(130.0), false); x.Value != "100%" || x.Pct != 100 {
+		t.Errorf("130%% shows as %+v, want 100%%", x)
+	}
+	if x := g.pct("CPU", ptr(-5.0), false); x.Value != "0%" {
+		t.Errorf("-5%% shows as %q, want 0%%", x.Value)
+	}
 	if x := g.pct("Memory", nil, false); !x.NoData || x.Value != "—" || x.Pct != 0 {
 		t.Errorf("no data = %+v", x)
 	}

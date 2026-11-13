@@ -337,7 +337,7 @@ func (st *state) charts() ([]Chart, Hover) {
 	temps := perPi(func(a model.Agg) *float64 { return a.Temp.Value() }, func(s model.Sample) *float64 { return s.TempC }, degC)
 	tLo := math.Min(30, math.Floor(minOf(temps, 30)/10)*10)
 	tTop := math.Max(70, math.Ceil(maxOf(temps)/10)*10)
-	cpus := perPi(func(a model.Agg) *float64 { return a.CPU.Value() }, func(s model.Sample) *float64 { return s.CPUPct }, pctText)
+	cpus := perPi(func(a model.Agg) *float64 { return clampPct(a.CPU.Value()) }, func(s model.Sample) *float64 { return clampPct(s.CPUPct) }, pctText)
 	cHi, cStep := 100.0, 25.0
 	if maxOf(cpus) < 45 {
 		cHi, cStep = 50, 10

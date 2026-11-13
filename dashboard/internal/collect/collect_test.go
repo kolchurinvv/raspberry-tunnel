@@ -619,3 +619,23 @@ func TestNodeMetricsLogOnChange(t *testing.T) {
 		t.Errorf("node metrics logged %d times, want 2 (failing, then again):\n%s", n, buf.String())
 	}
 }
+
+// iowait can go down between two readings, so the busy ticks can outrun the
+// total: that interval has no CPU figure, never one over 100%.
+func TestCPUOverHundredIsDropped(t *testing.T) {
+	r := newRig(t)
+	ctx := context.Background()
+	withIOWait := func(busy, idle, iowait int) map[string]any {
+		s := stat(busy, idle)
+		s["iowait"] = iowait
+		return s
+	}
+	r.gw.set(func(m map[string]any) { m["cpu"].(map[string]any)["stat"] = withIOWait(2000, 8000, 500) })
+	r.col.Cycle(ctx, t0)
+	// 300 more busy ticks, but iowait fell by 200: the total grew by only 100.
+	r.gw.set(func(m map[string]any) { m["cpu"].(map[string]any)["stat"] = withIOWait(2300, 8000, 300) })
+	r.col.Cycle(ctx, t0.Add(30*time.Second))
+	if c := r.samples()["pi-b"][1].CPUPct; c != nil {
+		t.Errorf("CPU = %v%%, want none", *c)
+	}
+}
