@@ -184,10 +184,11 @@ type Options struct {
 type Collector struct {
 	opt Options
 
-	mu       sync.Mutex
-	states   map[string]model.HostState
-	counters map[string]counters
-	snap     Snapshot
+	mu          sync.Mutex
+	nodeFailing bool
+	states      map[string]model.HostState
+	counters    map[string]counters
+	snap        Snapshot
 }
 
 // counters are the previous answer's cumulative counters, for rates.
@@ -318,12 +319,26 @@ func (c *Collector) Cycle(ctx context.Context, ts time.Time) {
 			node, nodeErr = c.opt.Node.NodeMetrics(nctx)
 		})
 	}
+	// Log node-metrics trouble when it starts and ends, not every 30 seconds.
 	nodeDone := func() bool {
 		nodeWG.Wait()
-		if nodeErr != nil && ctx.Err() == nil {
-			c.opt.Log.Warn("reading node metrics", "err", nodeErr)
+		if c.opt.Node == nil {
+			return false
 		}
-		return c.opt.Node != nil && nodeErr == nil
+		failing := nodeErr != nil
+		c.mu.Lock()
+		was := c.nodeFailing
+		c.nodeFailing = failing
+		c.mu.Unlock()
+		if ctx.Err() == nil {
+			switch {
+			case failing && !was:
+				c.opt.Log.Warn("reading node metrics", "err", Scrub(nodeErr.Error()))
+			case !failing && was:
+				c.opt.Log.Info("reading node metrics again")
+			}
+		}
+		return !failing
 	}
 
 	peers, err := c.opt.Discoverer.Peers(ctx)

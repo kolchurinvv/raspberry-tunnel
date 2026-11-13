@@ -574,3 +574,48 @@ func TestErrorAnswerLogsOnlyTheCode(t *testing.T) {
 		}
 	}
 }
+
+type flakyNode struct {
+	mu  sync.Mutex
+	err error
+}
+
+func (f *flakyNode) set(err error) {
+	f.mu.Lock()
+	f.err = err
+	f.mu.Unlock()
+}
+
+func (f *flakyNode) NodeMetrics(context.Context) (collect.NodeMetrics, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return collect.NodeMetrics{}, f.err
+	}
+	return fakeNode{}.NodeMetrics(context.Background())
+}
+
+// Node-metrics trouble is logged when it starts and ends, not every poll.
+func TestNodeMetricsLogOnChange(t *testing.T) {
+	r := newRig(t)
+	var buf bytes.Buffer
+	node := &flakyNode{err: errors.New("HTTP 403 from the API server")}
+	col := collect.New(collect.Options{Discoverer: r.disc, Store: r.store, Client: r.client, Node: node,
+		Timeout: 300 * time.Millisecond, Log: slog.New(slog.NewTextHandler(&buf, nil))})
+	ctx := context.Background()
+	for i := 0; i < 3; i++ {
+		col.Cycle(ctx, t0.Add(time.Duration(i)*30*time.Second))
+	}
+	if col.Snapshot().NodeOK {
+		t.Error("NodeOK while failing")
+	}
+	node.set(nil)
+	col.Cycle(ctx, t0.Add(90*time.Second))
+	col.Cycle(ctx, t0.Add(120*time.Second))
+	if !col.Snapshot().NodeOK {
+		t.Error("not NodeOK after recovering")
+	}
+	if n := strings.Count(buf.String(), "reading node metrics"); n != 2 {
+		t.Errorf("node metrics logged %d times, want 2 (failing, then again):\n%s", n, buf.String())
+	}
+}
