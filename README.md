@@ -35,7 +35,8 @@ between them, but traffic never exits there.
 | Headscale policy (`headscale/policy.json`) | Passes the VM test |
 | Headscale server | Runs as a second Headscale on an existing server, set up by hand. Its config isn't in this repository |
 | SD card images | Both built and flashed |
-| Public health dashboard (`docs/decisions/D2-public-dashboard-pulls-from-the-pis.md`) | Designed. Not built yet: next come the Pis' status endpoint, then the dashboard on the user's cluster, whose stack is still open |
+| Public health dashboard (`docs/decisions/D2-public-dashboard-pulls-from-the-pis.md`) | Designed. Not built yet: next come the Pis' status endpoint, then the dashboard, one Go binary (`docs/decisions/D3-dashboard-is-one-go-binary.md`) deployed on the user's cluster |
+| Dashboard program (`dashboard/`, D3) | Built: one Go binary, with its image (`.#dashboard-image`, amd64) and a check that runs its Go tests (`.#checks.x86_64-linux.dashboard`). The tests pass, including those that no address or private name reaches the page and that every route is `/` or under `/_dash/`. Dev mode runs it with fake Pis (`dashboard/README.md`). Not yet run against the real Headscale, the Pis' endpoint or the cluster, and not deployed |
 | Waking the workstation from the phone through Pi A | Not started, secondary to the tunnel |
 
 ## Testing
@@ -53,6 +54,10 @@ tunnel fails, and recovery after a power cut, the TV adapter being replugged, an
 
 It doesn't cover connecting through CGNAT, the ARM images, the Pi's network hardware
 or USB adapter, real speed, or real casting apps.
+
+The dashboard's Go tests, with `gofmt` and `go vet`, run in their own check:
+`nix build '.#checks.x86_64-linux.dashboard' -L --no-link`. On the shared build
+machine, run it under the box's lock, as `private/gate.md` describes for the VM test.
 
 ## First-time setup
 
