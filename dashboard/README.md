@@ -86,6 +86,15 @@ docker load < result             # or: podman load < result
   - It runs as uid 65532, and keeps its state in the volume at `/var/lib/dashboard`.
   - It carries a CA bundle for TLS to Headscale.
   - The user pushes it. Agents don't.
+- **Pushing it** to `ghcr.io/kolchurinvv/raspberry-tunnel-dashboard`, where the cluster pulls it from:
+  `just push-dashboard-image`, run from `main/` on a merged commit with `gh` logged in.
+  - It builds `.#dashboard-image` and pushes it with skopeo, taken from this flake's nixpkgs, so no Docker
+    daemon is needed.
+  - It tags the image with the commit and with `latest`, and prints the digest for pinning a deployment.
+  - It refuses a dirty tree or a commit that isn't on `origin/main`, so a tag always names a public commit.
+  - It logs in with `gh`'s token through a throwaway auth file, which it deletes afterwards.
+  - A package's first push to ghcr.io is private. The cluster then pulls with its ghcr pull secret, unless
+    the package is made public in GitHub's package settings.
 - **`checks.x86_64-linux.dashboard`** builds the same thing as `.#dashboard`. On the shared build machine, run
   it under the box's lock, as `private/gate.md` describes for the VM test.
 - **`tailscale.com` in `go.mod` must equal nixpkgs' `tailscale` version**, which is what the Pis run. The
