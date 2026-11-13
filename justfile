@@ -62,11 +62,18 @@ push-dashboard-image:
   # An empty file isn't valid JSON, and skopeo refuses to read it. Start from an empty object.
   printf '{}\n' > "$REGISTRY_AUTH_FILE"
   gh auth token | skopeo login --username "$(gh api user --jq .login)" --password-stdin ghcr.io
-  for tag in "$rev" latest; do
+  # :latest only moves forward: from origin/main's tip, never from an older merged commit.
+  tags=("$rev")
+  if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
+    tags+=(latest)
+  else
+    echo "note: HEAD is behind origin/main, so :latest stays where it is" >&2
+  fi
+  for tag in "${tags[@]}"; do
     skopeo copy "docker-archive:$archive" "docker://$image:$tag"
   done
   digest=$(skopeo inspect --format '{{"{{"}}.Digest{{"}}"}}' "docker://$image:$rev")
-  echo "pushed $image:$rev and :latest"
+  echo "pushed $image:" "${tags[@]}"
   echo "to pin it in the cluster: $image@$digest"
 
 # Refuse a key that isn't the one ~/.ssh/config logs in to the Pi with: installing
