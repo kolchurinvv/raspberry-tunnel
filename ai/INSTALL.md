@@ -104,6 +104,7 @@ Replace every `TODO`; `none: <why>` is a valid value, a blank is not.
 | `<base>` branch | TODO: The branch changes merge into. |
 | Branches and commits | TODO: The repository's naming and message format. |
 | Decision records | TODO: Where architecture and stack decisions are written down. |
+| `<project-docs>` (`ai/06`) | TODO: Where this repository keeps its own docs (runbooks, specs, test plans, checklists), for example `docs/` with `docs/runbooks/`. Never under `ai/`, which the kit replaces on every update. |
 | Status docs (rule 5) | TODO: The README or roadmap that must stay current. |
 | Generated baselines (rule 3) | TODO: Snapshots, fixtures, migrations, lockfiles: files agents must never rewrite unasked. |
 | `<read-back>` (`ai/10`) | TODO: How tests read a stored record back from the real store: the database or store, the helper or test handle, how test data is isolated. `none: <why>` if nothing persists. |
@@ -112,12 +113,13 @@ Replace every `TODO`; `none: <why>` is a valid value, a blank is not.
 | `<static-checks>` (`ai/12`) | TODO: The type-check, lint, format and guard commands, whether warnings fail, and the invariants the guards hold. State gaps (`none: no lint gate yet`). |
 | Quality gates (rule 4) | TODO: The checks that may only get stricter. |
 | CI (rule 6) | TODO: What runs on which event, and how to watch it. |
-| Adversarial review (core 10) | TODO: How independent review is run here. |
+| Adversarial review (core 10) | TODO: How independent review is run here: which tool or agent, and who decides on a further round (`ai/08`: one review; more only when the user asks). |
 | Agent definitions | TODO: Where agent and skill files live. |
 | Memory root | TODO: Where shared agent memory lives, or none. |
 | Autonomy | TODO: What agents may do without asking. |
 | `Feedback (star-pupil)` | off |
 | The kit itself | Vendored from ord-ai-n (version in `ai/.kit-manifest`). Update by re-running the installer; never edit `ai/` or the block above. |
+| Amendments reconciled | Through A<n>. The installer set this. After an update, raise it only once this repository's own text agrees with every newer entry in `ai/AMENDMENTS.md` (§ Update). |
 ```
 
 **Reconcile, don't stack.** Where the repository already has rules (a
@@ -225,7 +227,7 @@ Adopt the ord-ai-n agent kit in this repository. The kit is a contract for how A
 
 3. From here on, follow ai/INSTALL.md, which is now in the repository, from Install step 3 to the end of step 5. It is the procedure; this message only adds emphasis:
    - Bindings: find every value in the repository itself. State gaps instead of fixing them. Where the repository has its own governing documents (a constitution, CONTRIBUTING, decision records), they win over the kit. Say so in the Bindings, and follow them for branch names, commit messages, and what must pass before a pull request.
-   - Never edit ai/ or the generated block by hand; only the installer writes them.
+   - Never add, edit or remove anything under ai/ (its manifest included) or in the generated block; only the installer writes them. This repository's own docs go where the <project-docs> Bindings row says.
    - Before the pull request, run the repository's gate the way it requires. Don't copy anyone's secrets to make it run, and don't take a shared resource (a test database, a container) that another checkout is using. If you can't run it, say so.
    - One concern per pull request. Changes to tools the maintainers already run go in a separate pull request.
    - After the pull request is open, list every gap the Bindings state and offer to open one issue per gap (ai/INSTALL.md step 6). Open them only when I agree.
@@ -241,10 +243,37 @@ Ask me about anything this repository's own documents don't settle: a ticket key
 2. Re-run the install line from step 2.
 3. Commit the result on its own. Its diff is exactly what changed in the kit;
    the source line in `ai/.kit-manifest` shows which version you moved to.
+4. **Reconcile the amendments it listed.** Each one is a rule that now asks
+   agents for something different (`AMENDMENTS.md`), and `ai/sync.sh --check`
+   keeps exiting 3, listing them, until they're reconciled. CI that runs the
+   check stays red meanwhile. The update can't reach text this repository wrote,
+   so read each entry and fix what it names under **Check outside `ai/`**: a
+   Bindings row, a review skill or command, a copied agent definition, a
+   template that restates the old rule. To keep the old behavior instead, say
+   so in the Bindings. Then set the `Amendments reconciled` row to the number
+   the check names (a repository installed before the row existed adds it).
+   Commit that separately, naming the amendments it answers, in the same pull
+   request as the update.
+5. **Tell the agents that are already running,** or restart them. A session
+   keeps the rules it read when it started.
 
 If the installer refuses because `ai/` has uncommitted edits, someone edited
 the kit in place. Move what they meant into Bindings, drop the edit
 (`git checkout -- ai`), and run it again.
+
+If `--check` says `ai/.kit-manifest` was edited by hand, or names a file under
+`ai/` that the kit doesn't ship, a file of this repository's own is in the kit's
+directory:
+
+1. Move each such file to where the `<project-docs>` row says (`git mv`), and fix
+   links to its old path.
+2. Commit the move, even with the hand-edited manifest still in place.
+3. Run the install line again. It writes a fresh, sealed manifest, and
+   `ai/sync.sh --check .` then passes on the kit's side.
+
+An update deletes a file only if `ai/.kit-retired` names it, the manifest listed
+it, and it is unchanged since it was installed. It keeps everything else, and
+`--check` names it until it is moved.
 
 ## Remove
 

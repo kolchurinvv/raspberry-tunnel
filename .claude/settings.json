@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "Yolo-but-guarded profile, from ai/templates/claude.settings.json. Autonomy is granted here, and holds only while the execution policy (ai/00) is honoured. The deny list protects the generated baselines named in AGENTS.md's Bindings, forbids force-pushes, and forbids writes to other repositories. Commands that touch the cluster or the tailnet servers always ask first, as the user's own rules require. Only the user changes this file.",
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Edit(**)",
+      "Write(**)",
+      "Bash(nix build *)",
+      "Bash(nix eval *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(gh pr *)",
+      "WebSearch"
+    ],
+    "ask": [
+      "Bash(kubectl *)",
+      "Bash(helm *)",
+      "Bash(k9s*)",
+      "Bash(headscale *)",
+      "Bash(tailscale *)"
+    ],
+    "deny": [
+      "Edit(**/flake.lock)",
+      "Write(**/flake.lock)",
+      "Edit(**/dashboard/go.sum)",
+      "Write(**/dashboard/go.sum)",
+      "Edit(**/.claude/settings.json)",
+      "Write(**/.claude/settings.json)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)",
+      "Edit(~/Dev_Projects/k3s-migration/**)",
+      "Write(~/Dev_Projects/k3s-migration/**)",
+      "Edit(~/.config/nixos/**)",
+      "Write(~/.config/nixos/**)"
+    ]
+  }
+}

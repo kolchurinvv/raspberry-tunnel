@@ -1,0 +1,5 @@
+# Files the kit used to ship and no longer does, one path per line, such as ai/old-module.md.
+# An update deletes a file from a repository only if this list names it, the repository's
+# manifest listed it, and it is unchanged since it was installed. It keeps anything else under ai/
+# that the kit doesn't ship, and ai/sync.sh --check names it. A kit change that removes a file from
+# ai/ adds its path here in the same commit. Never take a path out of this list.

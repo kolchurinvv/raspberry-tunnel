@@ -10,11 +10,19 @@ every session.
 | Kind of knowledge | Home |
 |---|---|
 | A **decision** (stack choice, architectural invariant, "we use X not Y") | A decision record: `docs/decisions/*`, ADRs, a dated `stack-decisions.md`. Dated, append-mostly, supersession noted. Template: `ai/templates/decision-record.md`; its Enforcement section names what holds the decision. |
-| A **procedure** (how to run/deploy/regenerate something) | A runbook: `docs/runbooks/*`. |
+| A **procedure** (how to run/deploy/regenerate/test something by hand) | A runbook, in `<project-docs>` (Bindings), for example `docs/runbooks/*`. |
+| A **spec, test plan, checklist or reference** for this project | `<project-docs>`, for example `docs/`. |
 | **History / why a change was made** | The commit message. Not a doc, not the entrypoint. |
 | **In-flight task state** | A task list / plan in the current session — not a file. |
 | **Cross-session institutional knowledge** (user prefs, validated approaches) | The memory framework (`ai/04`). |
 | A **rule that changes turn-to-turn agent behavior** | The entrypoint — but only as a pointer, and only if it meets the bar below. |
+
+**Never under `ai/`.** That directory is the kit's: the installer writes it, and
+every update replaces it. A project file placed there fails `ai/sync.sh --check`.
+Listing it in `ai/.kit-manifest` to quiet the check doesn't make it the kit's,
+and an update may delete it. Name project files the way the project names
+things, not after the kit's numbered modules: a project `ai/11-…` and the kit's
+`ai/11` would be two files with one name in every citation.
 
 ## The bar for putting something in the entrypoint
 

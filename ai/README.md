@@ -14,8 +14,10 @@ It drops into any repository and works with any coding agent, harness or model.
 | `../AGENTS.md` | Provider-neutral entrypoint: the core block (generated from `CORE.md`) + this repo's Bindings. |
 | `CORE.md` | The non-negotiable core and module index: the block `sync.sh` generates into every adopting repo's `AGENTS.md`. |
 | `sync.sh` | Vendors the kit into a repo (`sync.sh <repo>`); verifies a vendored copy (`sync.sh --check <repo>`). |
+| `.kit-retired` | Files the kit used to ship and has removed: the only files an update deletes from a repo. |
 | `../install.sh` | The `curl \| bash` entry point: downloads the kit at one commit and runs its `sync.sh` on the current repo. |
 | `INSTALL.md` | Step by step: install into an existing repo, fill in the Bindings, update, remove, send lessons back; or a prompt that hands the adoption to an agent. |
+| `AMENDMENTS.md` | Every change to what a rule asks of agents, newest first: what it supersedes, why, and where an adopting repo may have restated the old rule. `sync.sh --check` holds an update until they are reconciled. |
 | `00-execution-policy.md` | How agents operate: incremental commits, known-good start, append-only baselines, ratchet-only gates, conditional autonomy. |
 | `01-commit-and-pr-hygiene.md` | The gate, commit messages (host convention first), branching/worktrees, PRs, milestone tags. |
 | `02-ci-discipline.md` | Watch every push to green; one umbrella check; merge only on a green, pinned head; use the poll recipe; artifact triage. |
@@ -24,7 +26,7 @@ It drops into any repository and works with any coding agent, harness or model.
 | `05-agent-authoring.md` | Writing sub-agents; keeping definitions + memory in git. |
 | `06-knowledge-placement.md` | The pointer pattern: where each kind of knowledge belongs. |
 | `07-agent-roster.md` | The standing roster of specialists and the delegation policy. |
-| `08-adversarial-review.md` | Reviewing agent-authored work: conformance-to-request first, green is a claim, falsify your own findings; the review-fix loop that answers every finding. |
+| `08-adversarial-review.md` | Reviewing agent-authored work: conformance-to-request first, green is a claim, falsify your own findings; one review, every finding answered, no automatic second round. |
 | `09-parallel-streams.md` | Running several agents on one codebase: frozen/owned/shared allocation, append protocol, resource serialization. |
 | `10-test-discipline.md` | What tests must prove: persistence verified by reading it back from the real store; tests that can fail; real dependencies with fakes quarantined; behaviors covered, not only lines; test first, by layer. |
 | `11-quality-ratchets.md` | The machinery behind rule 4: floors per area raised only, the floor gate as the local gate, one exemption registry per family of gates, grandfather lists that only shrink, gates that fail loud, guards on the gates themselves. |
@@ -68,9 +70,11 @@ Two rules shape every step:
   a commit convention, its own review skill), the host's documents win over the
   kit's defaults. Bindings say so, and the host's existing tools point at the
   matching module instead of a parallel one.
-- **Never edit the kit in place.** Every update overwrites `ai/` and the block,
-  and `sync.sh --check` fails on in-place edits. Repo-specific values go in
-  Bindings; changes to the kit itself go to ord-ai-n.
+- **Never edit the kit in place, or add to it.** Every update overwrites `ai/`
+  and the block, and `sync.sh --check` fails on in-place edits and on files the
+  kit doesn't ship. Repo-specific values go in Bindings, and the repository's own
+  docs where its `<project-docs>` row says; changes to the kit itself go to
+  ord-ai-n.
 
 The kit must live at `ai/` in the host, because its modules cite each other by
 that path. When developing the kit itself, run `ai/sync.sh <host-repo>` from a
