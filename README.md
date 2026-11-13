@@ -36,6 +36,7 @@ between them, but traffic never exits there.
 | Headscale server | Runs as a second Headscale on an existing server, set up by hand. Its config isn't in this repository |
 | SD card images | Both built and flashed |
 | Public health dashboard (`docs/decisions/D2-public-dashboard-pulls-from-the-pis.md`) | Designed. Not built yet: next come the Pis' status endpoint, then the dashboard, one Go binary (`docs/decisions/D3-dashboard-is-one-go-binary.md`) deployed on the user's cluster |
+| Dashboard program (`dashboard/`, D3) | Built: one Go binary, with its image (`.#dashboard-image`, amd64) and a check that runs its Go tests (`.#checks.x86_64-linux.dashboard`). The tests pass, including those that no address or private name reaches the page and that every route is `/` or under `/_dash/`. Dev mode runs it with fake Pis (`dashboard/README.md`). Not yet run against the real Headscale, the Pis' endpoint or the cluster, and not deployed |
 | Waking the workstation from the phone through Pi A | Not started, secondary to the tunnel |
 
 ## Testing
