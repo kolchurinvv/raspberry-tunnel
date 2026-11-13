@@ -751,6 +751,22 @@ in
         pi_b.succeed("systemctl start tailscaled")
         site_sees_tv_as(PI_A)
 
+    with subtest("Pi B's tunnel is unknown, not empty, while Tailscale is down on it, and back once it's up"):
+        pi_b.succeed("tailscale down")
+        # tailscaled still runs and answers, but isn't Running.
+        pi_b.succeed("systemctl is-active tailscaled")
+        state = json.loads(pi_b.execute("tailscale status --json")[1])["BackendState"]
+        assert state != "Running", state
+        # Asked on Pi B itself, as it's off the tailnet.
+        reply = json.loads(pi_b.succeed("curl -fsS --max-time 5 http://127.0.0.1:9190/status"))
+        assert reply["schema"] == 1 and reply["tunnel"] is None, reply
+        # Its usual settings, with Pi A by address, as a stopped tailscaled can't
+        # look up its name.
+        pi_b.succeed(f"tailscale up --login-server=https://headscale --exit-node={pi_a_tailnet} --exit-node-allow-lan-access=true --accept-dns=false")
+        reply = wait_for_status(pi_b_tailnet, lambda reply: [(entry["peer"], entry["online"]) for entry in reply["tunnel"] or []] == [("pi-a", True)])
+        check_status(reply, "pi-b", "gateway", PI_B_INTERFACES)
+        site_sees_tv_as(PI_A)
+
     with subtest("the TV moves if Pi A stays on the tailnet but stops forwarding, and moves back"):
         pi_a.succeed("sysctl -w net.ipv4.ip_forward=0")
         site_sees_tv_as(APT_B_ROUTER_WAN)

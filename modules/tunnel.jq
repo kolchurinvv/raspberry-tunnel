@@ -62,7 +62,10 @@ def tunnel_entry($pong):
 local_api_json as $tailscale
 | ($ping | local_api_json) as $pong
 | if $role != "exit" and $role != "gateway" then error("unknown role") else . end
-| if ($tailscale | type) != "object" then null
+# Outside Running, as when logged out with an expired key (NeedsLogin), after
+# tailscale down (Stopped), or while Starting, tailscaled has no peers to show,
+# and an empty list would wrongly mean no exit node set, or no gateways.
+| if ($tailscale | type) != "object" or $tailscale.BackendState != "Running" then null
   else
     ($tailscale.Peer | if type == "object" then [.[]] else [] end) as $peers
     | if $role == "gateway" then [$peers[] | select(.ExitNode == true) | tunnel_entry($pong)]

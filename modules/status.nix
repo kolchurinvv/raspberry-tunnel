@@ -153,10 +153,11 @@ let
 
       ping_ip="" ping="" gateway=null
       ${lib.optionalString gateway ''
-        # The exit node's IPv4 address, to ping it. Only a pointer: jq checks
-        # the answer came from the address the full status gives the exit node.
+        # The exit node's IPv4 address, to ping it, while tailscaled is running.
+        # Only a pointer: jq checks the answer came from the address the full
+        # status gives the exit node.
         exit_node_ip='"ExitNodeStatus":[[:space:]]*\{[^}]*"TailscaleIPs":[[:space:]]*\[[^]]*"(([0-9]{1,3}\.){3}[0-9]{1,3})/32"'
-        if [[ $tailscale =~ $exit_node_ip ]] && within 600000; then
+        if [[ $tailscale == *'"BackendState": "Running"'* && $tailscale =~ $exit_node_ip ]] && within 600000; then
           ping_ip=''${BASH_REMATCH[1]}
           # One attempt. Without a pong tailscaled never answers, so nc's
           # deadline is all that ends it.
