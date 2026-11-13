@@ -59,6 +59,8 @@ push-dashboard-image:
   export REGISTRY_AUTH_FILE
   REGISTRY_AUTH_FILE=$(mktemp)
   trap 'rm -f "$REGISTRY_AUTH_FILE"' EXIT
+  # An empty file isn't valid JSON, and skopeo refuses to read it. Start from an empty object.
+  printf '{}\n' > "$REGISTRY_AUTH_FILE"
   gh auth token | skopeo login --username "$(gh api user --jq .login)" --password-stdin ghcr.io
   for tag in "$rev" latest; do
     skopeo copy "docker-archive:$archive" "docker://$image:$tag"
