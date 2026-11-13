@@ -12,6 +12,9 @@ TV A ─ router ── ISP router ── internet ── combo unit ── Pi B 
          Pi A (exit)
 ```
 
+Each apartment is named after its Pi: apartment A has Pi A and TV A, apartment B
+has Pi B and TV B, and any later apartment takes its Pi's letter.
+
 Pi B bridges TV B onto apartment B's network, so the TV gets its address from the
 combo unit and phones there can cast to it as usual. Everything TV B sends to the
 internet still goes through Pi B, over the tunnel to Pi A, and out through
