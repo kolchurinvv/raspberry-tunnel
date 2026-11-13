@@ -1,7 +1,7 @@
 # Runs the real Pi A and Pi B roles in VMs against a real Headscale, and checks
-# where TV B's traffic goes. VLAN 1 stands in for the internet plus the fiber
-# apartment's LAN, VLAN 2 for the copper apartment's network behind its router,
-# and VLAN 3 for the cable between Pi B and the TV.
+# where TV B's traffic goes. VLAN 1 stands in for the internet plus apartment A's
+# LAN, VLAN 2 for apartment B's network behind its router, and VLAN 3 for the
+# cable between Pi B and the TV.
 #
 # It doesn't cover CGNAT or the Pi hardware.
 { lib, pkgs, ... }:
@@ -162,9 +162,9 @@ in
       tunnel.tvDns = "203.0.113.1";
     };
 
-    # The copper apartment's router. It hands out addresses, offers IPv6 as well,
-    # and NATs its network onto the internet.
-    copper = { config, nodes, ... }: {
+    # Apartment B's router. It hands out addresses, offers IPv6 as well, and NATs
+    # its network onto the internet.
+    apt-b-router = { config, nodes, ... }: {
       virtualisation.vlans = [ 1 2 ];
       networking.useNetworkd = true;
       networking.useDHCP = false;
@@ -184,8 +184,8 @@ in
             GatewayOnLink = true;
             PreferredSource = "198.51.100.3";
           }
-          # Other private networks this router can reach, as the fiber apartment's
-          # default VLAN may reach its secure VLAN while Pi B is on trial there.
+          # Other private networks this router can reach, as apartment A's default
+          # VLAN may reach its secure VLAN while Pi B is on trial there.
           {
             Destination = "10.99.0.0/24";
             Gateway = nodes.lanhost.networking.primaryIPAddress;
@@ -227,7 +227,7 @@ in
       environment.systemPackages = [ pkgs.curl ];
     };
 
-    # On the copper apartment's network, and on the tailnet.
+    # On apartment B's network, and on the tailnet.
     phone = {
       imports = [ dhcpClient ];
       virtualisation.vlans = [ 2 ];
@@ -240,7 +240,7 @@ in
       environment.systemPackages = [ pkgs.curl ];
     };
 
-    # A site on the internet, and the copper router's way out to it.
+    # A site on the internet, and the way out to it for apartment B's router.
     web = {
       virtualisation.vlans = [ 1 ];
       networking.interfaces.eth1.ipv4.addresses = [
@@ -269,7 +269,7 @@ in
       };
     };
 
-    # Stands in for the fiber apartment's default VLAN and its secure VLAN.
+    # Stands in for apartment A's default VLAN and its secure VLAN.
     lanhost = {
       virtualisation.vlans = [ 1 ];
       networking.interfaces.eth1.ipv4.addresses = [
@@ -329,13 +329,13 @@ in
   testScript = ''
     FIND_WEB = "curl -fsS --max-time 5 http://203.0.113.1/"
     PI_A = "192.0.2.2"
-    # The copper router's address on the internet.
-    COPPER = "198.51.100.3"
-    COPPER_ROUTER = "192.168.77.1"
+    # The addresses of apartment B's router on the internet and on its own network.
+    APT_B_ROUTER_WAN = "198.51.100.3"
+    APT_B_ROUTER_LAN = "192.168.77.1"
     # The TV's connections to the site, as Pi B tracks them.
     TV_CONNECTIONS = "conntrack -L --mark 0x1/0x1 --orig-dst 203.0.113.1"
     DISCOVERY = "${pkgs.python3}/bin/python3 ${discovery}"
-    # The fiber apartment's default VLAN and its secure VLAN.
+    # Apartment A's default VLAN and its secure VLAN.
     OTHER_NETWORKS = ("10.99.0.2", "5.5.5.2")
 
     def ssh_port(address):
@@ -357,10 +357,10 @@ in
     def site_only_saw_pi_a_since(since):
         log = f"journalctl -u whoami --since @{since}"
         web.succeed(f"{log} | grep -q {PI_A}")
-        web.fail(f"{log} | grep -q {COPPER}")
+        web.fail(f"{log} | grep -q {APT_B_ROUTER_WAN}")
 
     def tv_dns_leaves_as(address):
-        for server in (COPPER_ROUTER, "9.9.9.9"):
+        for server in (APT_B_ROUTER_LAN, "9.9.9.9"):
             # dd takes the whole reply in one read. bash's read takes a byte at a time,
             # and on UDP the first byte's read throws away the rest of the reply. The
             # socket only takes replies from the server it asked.
@@ -385,7 +385,7 @@ in
 
     with subtest("both Pis and the phone join"):
         for machine in (pi_b, phone):
-            machine.wait_until_succeeds(f"ip -4 route show default | grep -q 'via {COPPER_ROUTER} '")
+            machine.wait_until_succeeds(f"ip -4 route show default | grep -q 'via {APT_B_ROUTER_LAN} '")
         headscale.succeed("headscale users create tunnel")
         keys = (
             (pi_a, headscale.succeed("headscale preauthkeys create --tags tag:exit").strip()),
@@ -400,13 +400,13 @@ in
         pi_a_tailnet = pi_a.succeed("tailscale ip -4").strip()
         pi_b_tailnet = pi_b.succeed("tailscale ip -4").strip()
 
-    with subtest("the TV gets its address from the copper router through Pi B, and no IPv6"):
-        tv.wait_until_succeeds(f"ip -4 route show default | grep -q 'via {COPPER_ROUTER} '")
+    with subtest("the TV gets its address from apartment B's router through Pi B, and no IPv6"):
+        tv.wait_until_succeeds(f"ip -4 route show default | grep -q 'via {APT_B_ROUTER_LAN} '")
         tv_lan = lan_address(tv)
         phone_lan = lan_address(phone)
         # The router does offer IPv6 addresses, which the TV must not get.
         phone.wait_until_succeeds("ip -6 addr show scope global | grep -q fd00:77:")
-        router_link_local = copper.succeed("ip -6 -o addr show eth2 scope link | grep -o 'fe80::[0-9a-f:]*'").strip()
+        router_link_local = apt_b_router.succeed("ip -6 -o addr show eth2 scope link | grep -o 'fe80::[0-9a-f:]*'").strip()
         phone.succeed(f"ping -6 -c 1 -W 2 {router_link_local}%eth1")
         tv.fail(f"ping -6 -c 2 -W 2 {router_link_local}%eth1")
         print(tv.succeed("ip route; ip -6 route; ip -6 addr"))
@@ -427,7 +427,7 @@ in
         tv.succeed("curl -fsS --max-time 60 -o /tmp/big http://203.0.113.1/big")
         tv.succeed("test $(stat -c%s /tmp/big) = 20971520")
 
-    with subtest("phones on the copper apartment's network find the TV, and each reaches the other"):
+    with subtest("phones on apartment B's network find the TV, and each reaches the other"):
         phone.wait_until_succeeds(f"{DISCOVERY} search | grep -qx {tv_lan}", timeout=30)
 
         def phone_heard_tv(_):
@@ -438,14 +438,14 @@ in
         tv_and_phone_reach_each_other()
         # Each learns the TV's hardware address afresh, which needs the TV's ARP
         # replies to cross the bridge rather than be routed.
-        for machine, interface in ((pi_b, "br0"), (copper, "eth2"), (phone, "eth1")):
+        for machine, interface in ((pi_b, "br0"), (apt_b_router, "eth2"), (phone, "eth1")):
             machine.succeed(f"ip neigh flush to {tv_lan} dev {interface}; ping -c 1 -W 2 {tv_lan}")
 
     with subtest("the TV can't reach other networks, the tailnet or Pi B itself"):
-        FIND_COPPER_LAN = f"curl -fsS --max-time 5 http://{phone_lan}/"
-        pi_b.succeed(FIND_COPPER_LAN)
+        FIND_APT_B_LAN = f"curl -fsS --max-time 5 http://{phone_lan}/"
+        pi_b.succeed(FIND_APT_B_LAN)
         lanhost_primary = lanhost.succeed("ip -4 -o addr show eth1 | grep -o '192.168.1.[0-9]*'").strip()
-        # The phone reaches them through the copper router, so on fallback only Pi B
+        # The phone reaches them through apartment B's router, so on fallback only Pi B
         # keeps the TV off them.
         for destination in OTHER_NETWORKS + (lanhost_primary,):
             phone.succeed(f"curl -fsS --max-time 5 http://{destination}/")
@@ -464,19 +464,19 @@ in
     with subtest("while the tunnel works, the site only sees Pi A"):
         site_only_saw_pi_a_since(tunnel_up)
 
-    with subtest("the TV moves to the copper connection if Pi A disappears, and moves back"):
+    with subtest("the TV moves to apartment B's connection if Pi A disappears, and moves back"):
         tv.succeed(FIND_WEB)
         pi_b.succeed(f"{TV_CONNECTIONS} | grep -q {pi_b_tailnet}")
         pi_a.succeed("systemctl stop tailscaled")
-        site_sees_tv_as(COPPER)
+        site_sees_tv_as(APT_B_ROUTER_WAN)
         # A connection left over from the other path would stall instead of resetting.
         pi_b.wait_until_fails(f"{TV_CONNECTIONS} | grep -q {pi_b_tailnet}", timeout=10)
         tv_is_kept_off_other_networks()
         tv_and_phone_reach_each_other()
         # Its replies come back through Pi B even though the router could answer the
         # TV directly.
-        tv_dns_leaves_as(COPPER)
-        # On this path the copper router translates the TV's address, not Pi B.
+        tv_dns_leaves_as(APT_B_ROUTER_WAN)
+        # On this path apartment B's router translates the TV's address, not Pi B.
         pi_b.succeed(f"{TV_CONNECTIONS} | grep -v {pi_b_tailnet} | grep -q .")
         pi_a.succeed("systemctl start tailscaled")
         site_sees_tv_as(PI_A)
@@ -488,7 +488,7 @@ in
         site_sees_tv_as(PI_A)
         site_only_saw_pi_a_since(before_blip)
 
-    with subtest("the TV doesn't move if the copper connection itself goes down"):
+    with subtest("the TV doesn't move if apartment B's connection itself goes down"):
         before_outage = now_on_site()
         pi_b.block()
         # Long enough for the TV to move, if it were going to.
@@ -499,14 +499,14 @@ in
 
     with subtest("the TV moves if Pi B's tunnel stops, and moves back"):
         pi_b.succeed("systemctl stop tailscaled")
-        site_sees_tv_as(COPPER)
+        site_sees_tv_as(APT_B_ROUTER_WAN)
         tv_is_kept_off_other_networks()
         pi_b.succeed("systemctl start tailscaled")
         site_sees_tv_as(PI_A)
 
     with subtest("the TV moves if Pi A stays on the tailnet but stops forwarding, and moves back"):
         pi_a.succeed("sysctl -w net.ipv4.ip_forward=0")
-        site_sees_tv_as(COPPER)
+        site_sees_tv_as(APT_B_ROUTER_WAN)
         pi_a.succeed("sysctl -w net.ipv4.ip_forward=1")
         site_sees_tv_as(PI_A)
 
@@ -514,13 +514,13 @@ in
         pi_a.crash()
         pi_a.start()
         site_sees_tv_as(PI_A, timeout=300)
-        # Pi A stays up for this one, so the TV has no reason to use the copper
+        # Pi A stays up for this one, so the TV has no reason to use apartment B's
         # connection while Pi B boots.
         before_pi_b_power_cut = now_on_site()
         pi_b.crash()
         pi_b.start()
         site_sees_tv_as(PI_A, timeout=300)
-        pi_b.wait_until_succeeds(FIND_COPPER_LAN, timeout=60)
+        pi_b.wait_until_succeeds(FIND_APT_B_LAN, timeout=60)
         tv_and_phone_reach_each_other()
 
     with subtest("Pi B's routing survives the TV adapter being replugged"):
@@ -533,17 +533,17 @@ in
         pi_b.wait_until_succeeds("ip link show eth2 | grep -q 'state UP'", timeout=30)
         pi_b.succeed("sleep 8")
         site_sees_tv_as(PI_A, timeout=60)
-        pi_b.wait_until_succeeds(FIND_COPPER_LAN, timeout=60)
+        pi_b.wait_until_succeeds(FIND_APT_B_LAN, timeout=60)
         tv_and_phone_reach_each_other()
 
     with subtest("Pi B's routing survives systemd-networkd restarting"):
         pi_b.succeed("systemctl restart systemd-networkd")
         pi_b.succeed("sleep 8")
         site_sees_tv_as(PI_A, timeout=60)
-        pi_b.wait_until_succeeds(FIND_COPPER_LAN, timeout=60)
+        pi_b.wait_until_succeeds(FIND_APT_B_LAN, timeout=60)
         tv_and_phone_reach_each_other()
 
-    with subtest("the TV stays off the copper connection until tv-fallback moves it, but keeps its network"):
+    with subtest("the TV stays off apartment B's connection until tv-fallback moves it, but keeps its network"):
         # Stopped together, so the result doesn't depend on tv-fallback's timing.
         pi_b.succeed("systemctl stop tv-fallback tailscaled")
         tv.fail(FIND_WEB)
@@ -560,13 +560,14 @@ in
         site_sees_tv_as(PI_A, timeout=60)
         tv_and_phone_reach_each_other()
 
-    with subtest("the site saw only Pi A from Pi B's power cut on, and never anything but Pi A or the copper connection"):
+    with subtest("the site saw only Pi A from Pi B's power cut on, and never anything but Pi A or apartment B's connection"):
         site_only_saw_pi_a_since(before_pi_b_power_cut)
-        web.fail(f"journalctl -u whoami -o cat | grep -E '^[0-9.]+ ' | grep -v -e '^{PI_A} ' -e '^{COPPER} ' | grep -q .")
+        web.fail(f"journalctl -u whoami -o cat | grep -E '^[0-9.]+ ' | grep -v -e '^{PI_A} ' -e '^{APT_B_ROUTER_WAN} ' | grep -q .")
 
     with subtest("the Pi A check above really depends on Pi A's firewall"):
         pi_a.succeed("nft delete table inet tunnel-exit")
-        # Seen from Pi A's address, so through the tunnel rather than the copper router.
+        # Seen from Pi A's address, so through the tunnel rather than apartment B's
+        # router.
         pi_b.wait_until_succeeds("curl -fsS --max-time 5 http://5.5.5.2/ | grep -qx 10.99.0.3", timeout=30)
 
     with subtest("the TV's port goes down if its bridge rules disappear, which the TV checks above depend on"):
@@ -575,7 +576,7 @@ in
         tv.fail(FIND_WEB)
         # With the port forced up regardless, the TV goes around the tunnel.
         pi_b.succeed("systemctl stop tv-port-gate; ip link set eth2 up")
-        site_sees_tv_as(COPPER, timeout=60)
+        site_sees_tv_as(APT_B_ROUTER_WAN, timeout=60)
         tv.wait_until_succeeds(f"ping -6 -c 1 -W 2 {router_link_local}%eth1", timeout=30)
   '';
 }
