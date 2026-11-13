@@ -141,6 +141,8 @@ func (st *state) piCard(x *pi, g *gauges) Card {
 		c.PillIcon, c.Pill = iconOf(Warn), x.TV+" on own connection"
 	case x.Role == model.RoleGateway && x.Latest.Route == model.RouteHeld:
 		c.PillIcon, c.Pill = iconOf(Warn), x.TV+" held"
+	case x.Role == model.RoleGateway && x.Latest.Route == model.RouteTVOff:
+		c.PillIcon, c.Pill = iconOf(Info), x.TV+" likely off"
 	case x.Role == model.RoleGateway && x.Latest.Path.Relayed():
 		c.PillIcon, c.Pill = iconOf(Warn), "Relayed"
 	default:
@@ -166,11 +168,9 @@ func (st *state) piCard(x *pi, g *gauges) Card {
 			case model.RouteOwn:
 				note = x.TV + " on its own connection"
 			case model.RouteHeld:
-				if r.TVLink != nil && !*r.TVLink {
-					note = x.TV + "'s port is down"
-				} else {
-					note = x.TV + " held: the tunnel is down"
-				}
+				note = x.TV + " held: the tunnel is down"
+			case model.RouteTVOff:
+				note = x.TV + "'s port is down, likely off"
 			case model.RouteNoData:
 				note = "route unknown"
 			default:
@@ -364,7 +364,7 @@ func (st *state) topo() Topo {
 			case *s.TVLink:
 				row.TV.Icon, row.TV.Status = iconOf(Good), "Bridged, link up"
 			default:
-				row.TV.Icon, row.TV.Status = iconOf(Warn), "Port down"
+				row.TV.Icon, row.TV.Status = iconOf(Info), "Port down, likely off"
 			}
 			if s.Route == model.RouteOwn {
 				row.Pi.Icon, row.Pi.Status = iconOf(Warn), g.TV+" → own connection"

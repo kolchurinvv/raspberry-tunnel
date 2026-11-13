@@ -202,6 +202,7 @@ func TestRouteStrip(t *testing.T) {
 		{TS: w.Start.Add(60 * time.Second), Host: "pi-b", Role: model.RoleGateway, Outcome: model.OutcomeOK, Route: model.RouteHeld},
 		{TS: w.Start.Add(90 * time.Second), Host: "pi-b", Role: model.RoleGateway, Outcome: model.OutcomeTimeout, Route: model.RouteNoData},
 		{TS: w.Start.Add(120 * time.Second), Host: "pi-b", Role: model.RoleGateway, Outcome: model.OutcomeOK, Route: model.RouteTunnel},
+		{TS: w.Start.Add(150 * time.Second), Host: "pi-b", Role: model.RoleGateway, Outcome: model.OutcomeOK, Route: model.RouteTVOff},
 	})
 	in := input(healthy()...)
 	in.Window, in.Hist = w, h
@@ -211,7 +212,7 @@ func TestRouteStrip(t *testing.T) {
 	for _, s := range segs {
 		got = append(got, s.Class)
 	}
-	want := "rs-tunnel rs-own rs-held rs-nodata rs-tunnel rs-nodata"
+	want := "rs-tunnel rs-own rs-held rs-nodata rs-tunnel rs-tvoff rs-nodata"
 	if strings.Join(got, " ") != want {
 		t.Errorf("segments = %q, want %q", got, want)
 	}
@@ -222,7 +223,8 @@ func TestRouteStrip(t *testing.T) {
 	if total != w.N {
 		t.Errorf("segments cover %d buckets, want %d", total, w.N)
 	}
-	// 2 of 4 known samples on the tunnel.
+	// 2 of 4 samples with the TV on were on the tunnel; the TV being off
+	// counts neither way.
 	if p.Hero.Value != "50.0%" {
 		t.Errorf("hero = %+v", p.Hero)
 	}
@@ -310,5 +312,22 @@ func TestChartsShape(t *testing.T) {
 	}
 	if top, step := niceTop(230); top != 300 || step != 100 {
 		t.Errorf("niceTop(230) = %v, %v", top, step)
+	}
+}
+
+// A TV port that's down is usually the TV off: no alarm, but a note.
+func TestPortDownIsNoAlarm(t *testing.T) {
+	pis := healthy()
+	pis[1].Latest.TVLink, pis[1].Latest.Route = ptr(false), model.RouteTVOff
+	p := Build(input(pis...))
+	if p.Banner.Icon.Level != Good {
+		t.Errorf("banner = %s %q", p.Banner.Icon.Level, p.Banner.Title)
+	}
+	card := p.Cards[1]
+	if card.Pill != "TV B likely off" || card.PillIcon.Level != Info || card.Stats[0].Note != "TV B's port is down, likely off" {
+		t.Errorf("card pill %q, role note %q", card.Pill, card.Stats[0].Note)
+	}
+	if tv := p.Topo.Rows[0].TV; tv.Status != "Port down, likely off" || tv.Icon.Level != Info {
+		t.Errorf("TV box = %+v", tv)
 	}
 }

@@ -38,6 +38,7 @@ type Agg struct {
 	Temp, CPU, Mem, Disk, Traffic, Latency   Mean
 	Relayed                                  int // samples with the tunnel relayed
 	RouteTunnel, RouteOwn, RouteHeld, NoData int // gateways: samples in each exit-route state
+	TVOff                                    int // gateways: samples with the tunnel up and the TV's port down
 	Undervoltage                             int // samples with undervoltage now
 }
 
@@ -65,6 +66,8 @@ func AggOf(s Sample) Agg {
 		a.RouteHeld = 1
 	case RouteNoData:
 		a.NoData = 1
+	case RouteTVOff:
+		a.TVOff = 1
 	case RouteNone:
 	default:
 		panic("model.AggOf: unknown route " + string(s.Route))
@@ -90,6 +93,7 @@ func (a *Agg) Merge(o Agg) {
 	a.RouteOwn += o.RouteOwn
 	a.RouteHeld += o.RouteHeld
 	a.NoData += o.NoData
+	a.TVOff += o.TVOff
 	a.Undervoltage += o.Undervoltage
 }
 

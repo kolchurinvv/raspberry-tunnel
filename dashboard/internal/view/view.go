@@ -714,6 +714,8 @@ func routeAt(a model.Agg) model.Route {
 		return model.RouteHeld
 	case a.RouteTunnel > 0:
 		return model.RouteTunnel
+	case a.TVOff > 0:
+		return model.RouteTVOff
 	default:
 		return model.RouteNoData
 	}
@@ -729,6 +731,8 @@ func routeClass(r model.Route) string {
 		return "rs-held"
 	case model.RouteNoData:
 		return "rs-nodata"
+	case model.RouteTVOff:
+		return "rs-tvoff"
 	default:
 		panic("view: unknown route " + string(r))
 	}
@@ -744,6 +748,8 @@ func routeText(r model.Route) (Level, string) {
 		return Crit, "held: tunnel or port down"
 	case model.RouteNoData:
 		return Unknown, "no data"
+	case model.RouteTVOff:
+		return Info, "TV port down, likely off"
 	default:
 		panic("view: unknown route " + string(r))
 	}

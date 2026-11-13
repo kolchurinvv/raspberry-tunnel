@@ -106,7 +106,7 @@
         if (key === 'route') {
           (d.r || []).forEach(function (r) {
             var row = make('div', 'tip-r');
-            row.appendChild(make('span', 'sw rs-' + ({ good: 'tunnel', warn: 'own', crit: 'held', unknown: 'nodata' })[r.l[i]]));
+            row.appendChild(make('span', 'sw rs-' + ({ good: 'tunnel', warn: 'own', crit: 'held', info: 'tvoff', unknown: 'nodata' })[r.l[i]]));
             row.appendChild(make('span', 'nm', r.tv));
             row.appendChild(make('strong', null, r.s[i]));
             tip.appendChild(row);

@@ -78,22 +78,25 @@ func (p Path) Up() bool {
 	return p == PathDirect || p == PathPeerRelay || p == PathDERP || p == PathIdle
 }
 
-// Route is which connection a gateway's TV leaves through at one moment, one
-// of D2's four exit-route states.
+// Route is which connection a gateway's TV leaves through at one moment: D2's
+// four exit-route states, plus the TV being off.
 type Route string
 
 const (
 	RouteNone   Route = ""       // not a gateway
 	RouteTunnel Route = "tunnel" // the gateway is up, with no fallback rule
 	RouteOwn    Route = "own"    // the fallback rule is set
-	RouteHeld   Route = "held"   // the tunnel is down with no fallback rule yet, or the TV's port is down
+	RouteHeld   Route = "held"   // the tunnel is down with no fallback rule yet
 	RouteNoData Route = "nodata" // the gateway didn't answer
+	// RouteTVOff: the tunnel is up but the TV's port is down, which is usually
+	// the TV being off. The user ruled it no failure, so it isn't D2's held.
+	RouteTVOff Route = "tvoff"
 )
 
 // Valid reports whether r is one of the routes above.
 func (r Route) Valid() bool {
 	switch r {
-	case RouteNone, RouteTunnel, RouteOwn, RouteHeld, RouteNoData:
+	case RouteNone, RouteTunnel, RouteOwn, RouteHeld, RouteNoData, RouteTVOff:
 		return true
 	}
 	return false
@@ -160,8 +163,8 @@ func (s Sample) Validate() error {
 //   - no data: the gateway didn't answer, or didn't say whether its fallback
 //     rule is set;
 //   - own connection: the fallback rule is set;
-//   - held: the tunnel is down with no fallback rule yet, or the TV's port is
-//     down;
+//   - held: the tunnel is down with no fallback rule yet;
+//   - TV off: the tunnel is up but the TV's port is down, likely the TV off;
 //   - tunnel: otherwise.
 //
 // With the fallback rule off but the tunnel's state unreadable, the dashboard
@@ -176,8 +179,11 @@ func RouteOf(ok bool, fallback *bool, path Path, tvLink *bool) Route {
 	if path == PathUnknown {
 		return RouteNoData
 	}
-	if !path.Up() || (tvLink != nil && !*tvLink) {
+	if !path.Up() {
 		return RouteHeld
+	}
+	if tvLink != nil && !*tvLink {
+		return RouteTVOff
 	}
 	return RouteTunnel
 }

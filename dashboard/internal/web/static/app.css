@@ -238,6 +238,8 @@ a.ghost:hover { color: var(--ink); border-color: var(--axis); }
 .rs-own { background: var(--warn); }
 .rs-held { background: var(--crit); }
 .rs-nodata { background: var(--axis); }
+/* The tunnel is up but the TV is off: not a failure, so a faded tunnel green. */
+.rs-tvoff { background: color-mix(in srgb, var(--good) 35%, transparent); }
 
 /* Charts */
 .charts { display: flex; flex-wrap: wrap; gap: 20px; }

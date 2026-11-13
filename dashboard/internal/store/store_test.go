@@ -88,7 +88,9 @@ func TestRollupsSumTheirSamples(t *testing.T) {
 	b.TempC, b.TrafficMbps, b.Path, b.Route = ptr(49.2), nil, model.PathDirect, model.RouteOwn
 	c := gateway(t0.Add(model.RollupWidth)) // the next bucket
 	down := model.Sample{TS: t0.Add(time.Minute), Host: "pi-b", Role: model.RoleGateway, Outcome: model.OutcomeOffline, Route: model.RouteNoData}
-	for _, smp := range []model.Sample{a, b, c, down} {
+	off := gateway(t0.Add(90 * time.Second))
+	off.TVLink, off.Route, off.TempC, off.TrafficMbps, off.Path = ptr(false), model.RouteTVOff, nil, nil, model.PathDirect
+	for _, smp := range []model.Sample{a, b, c, down, off} {
 		if err := s.WriteCycle(ctx, []model.Sample{smp}, nil, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -104,8 +106,8 @@ func TestRollupsSumTheirSamples(t *testing.T) {
 	if !first.Bucket.Equal(t0) || first.Host != "pi-b" || first.Role != model.RoleGateway {
 		t.Errorf("bucket = %v %s %s", first.Bucket, first.Host, first.Role)
 	}
-	if first.N != 3 || first.NOK != 2 {
-		t.Errorf("n, n_ok = %d, %d; want 3, 2", first.N, first.NOK)
+	if first.N != 4 || first.NOK != 3 {
+		t.Errorf("n, n_ok = %d, %d; want 4, 3", first.N, first.NOK)
 	}
 	if v := first.Temp.Value(); v == nil || *v != (47.2+49.2)/2 {
 		t.Errorf("mean temp = %v", v)
@@ -113,7 +115,7 @@ func TestRollupsSumTheirSamples(t *testing.T) {
 	if first.Traffic.N != 1 || first.Traffic.Sum != 14.25 {
 		t.Errorf("traffic = %+v, want only the known value", first.Traffic)
 	}
-	if first.Relayed != 1 || first.RouteTunnel != 1 || first.RouteOwn != 1 || first.NoData != 1 || first.RouteHeld != 0 {
+	if first.Relayed != 1 || first.RouteTunnel != 1 || first.RouteOwn != 1 || first.NoData != 1 || first.RouteHeld != 0 || first.TVOff != 1 {
 		t.Errorf("counts = %+v", first.Agg)
 	}
 	if r[1].N != 1 || !r[1].Bucket.Equal(t0.Add(model.RollupWidth)) {

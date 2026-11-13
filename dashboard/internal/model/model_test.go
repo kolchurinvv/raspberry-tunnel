@@ -134,9 +134,11 @@ func TestRouteOf(t *testing.T) {
 		{true, nil, PathDirect, ptr(true), RouteNoData},
 		{true, ptr(true), PathOffline, ptr(true), RouteOwn},
 		{true, ptr(true), PathDirect, ptr(false), RouteOwn},
+		// A port down with the tunnel up is the TV off, not held.
+		{true, ptr(false), PathDirect, ptr(false), RouteTVOff},
+		{true, ptr(false), PathOffline, ptr(false), RouteHeld},
 		{true, ptr(false), PathOffline, ptr(true), RouteHeld},
 		{true, ptr(false), PathNone, ptr(true), RouteHeld},
-		{true, ptr(false), PathDirect, ptr(false), RouteHeld},
 		{true, ptr(false), PathUnknown, ptr(true), RouteNoData},
 		{true, ptr(false), PathDirect, ptr(true), RouteTunnel},
 		{true, ptr(false), PathDERP, nil, RouteTunnel},

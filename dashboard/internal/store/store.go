@@ -77,6 +77,7 @@ CREATE TABLE rollup (
   r_own       INTEGER NOT NULL,
   r_held      INTEGER NOT NULL,
   r_nodata    INTEGER NOT NULL,
+  r_tvoff     INTEGER NOT NULL,
   uv          INTEGER NOT NULL,
   PRIMARY KEY (host, bucket)
 ) WITHOUT ROWID;
@@ -176,8 +177,8 @@ const insertSample = `INSERT INTO sample (ts, host, role, outcome, schema_seen, 
   ON CONFLICT (host, ts) DO NOTHING`
 
 const upsertRollup = `INSERT INTO rollup (bucket, host, role, n, n_ok, temp_sum, temp_n, cpu_sum, cpu_n, mem_sum,
-  mem_n, disk_sum, disk_n, traffic_sum, traffic_n, lat_sum, lat_n, relayed, r_tunnel, r_own, r_held, r_nodata, uv)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  mem_n, disk_sum, disk_n, traffic_sum, traffic_n, lat_sum, lat_n, relayed, r_tunnel, r_own, r_held, r_nodata, r_tvoff, uv)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT (host, bucket) DO UPDATE SET role = excluded.role,
   n = n + excluded.n, n_ok = n_ok + excluded.n_ok,
   temp_sum = temp_sum + excluded.temp_sum, temp_n = temp_n + excluded.temp_n,
@@ -187,7 +188,8 @@ const upsertRollup = `INSERT INTO rollup (bucket, host, role, n, n_ok, temp_sum,
   traffic_sum = traffic_sum + excluded.traffic_sum, traffic_n = traffic_n + excluded.traffic_n,
   lat_sum = lat_sum + excluded.lat_sum, lat_n = lat_n + excluded.lat_n,
   relayed = relayed + excluded.relayed, r_tunnel = r_tunnel + excluded.r_tunnel, r_own = r_own + excluded.r_own,
-  r_held = r_held + excluded.r_held, r_nodata = r_nodata + excluded.r_nodata, uv = uv + excluded.uv`
+  r_held = r_held + excluded.r_held, r_nodata = r_nodata + excluded.r_nodata, r_tvoff = r_tvoff + excluded.r_tvoff,
+  uv = uv + excluded.uv`
 
 const upsertState = `INSERT INTO host_state (host, role, last_ts, last_outcome, last_ok_ts, uptime_s, boot_ts,
   undervoltage, uv_events, fallback, tunnel_up, last_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -234,7 +236,7 @@ func (s *Store) WriteCycle(ctx context.Context, samples []model.Sample, events [
 		if _, err := tx.ExecContext(ctx, upsertRollup, bucket, smp.Host, string(smp.Role), a.N, a.NOK,
 			a.Temp.Sum, a.Temp.N, a.CPU.Sum, a.CPU.N, a.Mem.Sum, a.Mem.N, a.Disk.Sum, a.Disk.N,
 			a.Traffic.Sum, a.Traffic.N, a.Latency.Sum, a.Latency.N, a.Relayed,
-			a.RouteTunnel, a.RouteOwn, a.RouteHeld, a.NoData, a.Undervoltage); err != nil {
+			a.RouteTunnel, a.RouteOwn, a.RouteHeld, a.NoData, a.TVOff, a.Undervoltage); err != nil {
 			return fmt.Errorf("adding to the rollup for %s: %w", smp.Host, err)
 		}
 	}
@@ -349,7 +351,7 @@ func scanSamples(rows *sql.Rows) ([]model.Sample, error) {
 func (s *Store) Rollups(ctx context.Context, from, to time.Time) ([]model.Rollup, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT bucket, host, role, n, n_ok, temp_sum, temp_n, cpu_sum, cpu_n,
   mem_sum, mem_n, disk_sum, disk_n, traffic_sum, traffic_n, lat_sum, lat_n, relayed, r_tunnel, r_own, r_held,
-  r_nodata, uv FROM rollup WHERE bucket >= ? AND bucket < ? ORDER BY bucket, host`, from.Unix(), to.Unix())
+  r_nodata, r_tvoff, uv FROM rollup WHERE bucket >= ? AND bucket < ? ORDER BY bucket, host`, from.Unix(), to.Unix())
 	if err != nil {
 		return nil, fmt.Errorf("reading rollups: %w", err)
 	}
@@ -362,7 +364,7 @@ func (s *Store) Rollups(ctx context.Context, from, to time.Time) ([]model.Rollup
 		a := &r.Agg
 		if err := rows.Scan(&bucket, &r.Host, &role, &a.N, &a.NOK, &a.Temp.Sum, &a.Temp.N, &a.CPU.Sum, &a.CPU.N,
 			&a.Mem.Sum, &a.Mem.N, &a.Disk.Sum, &a.Disk.N, &a.Traffic.Sum, &a.Traffic.N, &a.Latency.Sum, &a.Latency.N,
-			&a.Relayed, &a.RouteTunnel, &a.RouteOwn, &a.RouteHeld, &a.NoData, &a.Undervoltage); err != nil {
+			&a.Relayed, &a.RouteTunnel, &a.RouteOwn, &a.RouteHeld, &a.NoData, &a.TVOff, &a.Undervoltage); err != nil {
 			return nil, fmt.Errorf("reading a rollup: %w", err)
 		}
 		r.Bucket, r.Role = time.Unix(bucket, 0).UTC(), model.Role(role)
