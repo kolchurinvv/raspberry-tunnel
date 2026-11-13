@@ -35,6 +35,7 @@ between them, but traffic never exits there.
 | Headscale policy (`headscale/policy.json`) | Passes the VM test |
 | Headscale server | Runs as a second Headscale on an existing server, set up by hand. Its config isn't in this repository |
 | SD card images | Both built and flashed |
+| Public health dashboard (`docs/decisions/D2-public-dashboard-pulls-from-the-pis.md`) | Designed. Not built yet: next come the Pis' status endpoint, then the dashboard on the user's cluster, whose stack is still open |
 | Waking the workstation from the phone through Pi A | Not started, secondary to the tunnel |
 
 ## Testing
