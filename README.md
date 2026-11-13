@@ -182,7 +182,9 @@ the same for `b`). The dashboard joins with a key from
   builds the new system on the workstation, copies it to the Pi over SSH and installs
   it for the Pi's next boot. `just reboot-pi a` then reboots into it. `just
   switch-nix-on a` switches to it at once instead. For Pi B, the recipes jump
-  through Pi A by themselves (see below). To switch without just:
+  through Pi A by themselves (see below). The recipes read `.env` and
+  `private/`, which git ignores, so run them from the folder that holds both:
+  `main/`, in a checkout with a folder per branch. To switch without just:
   ```sh
   NIX_SSHOPTS="-i <key>" nixos-rebuild switch --flake '.#pi-a' --target-host root@<ip> \
     --no-reexec --override-input admin-key path:/absolute/path/to/pi-a.pub \
