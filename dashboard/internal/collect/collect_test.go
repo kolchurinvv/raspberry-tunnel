@@ -522,3 +522,29 @@ func TestNoAddressStored(t *testing.T) {
 		}
 	}
 }
+
+// A re-flashed Pi leaves a stale node under the same name in the exit's
+// tunnel list; its counters must never stand in for the live node's.
+func TestExitTunnelStaleDuplicate(t *testing.T) {
+	for _, staleFirst := range []bool{true, false} {
+		r := newRig(t)
+		ctx := context.Background()
+		entries := func(live int) []any {
+			stale := map[string]any{"peer": "pi-b", "online": false, "path": "offline", "relay": nil,
+				"rx_bytes": 9_000_000_000, "tx_bytes": 0, "latency_ms": nil}
+			cur := map[string]any{"peer": "pi-b", "online": true, "path": "direct", "relay": nil,
+				"rx_bytes": live, "tx_bytes": 0, "latency_ms": nil}
+			if staleFirst {
+				return []any{stale, cur}
+			}
+			return []any{cur, stale}
+		}
+		r.exit.set(func(m map[string]any) { m["tunnel"] = entries(1000) })
+		r.col.Cycle(ctx, t0)
+		r.exit.set(func(m map[string]any) { m["tunnel"] = entries(1000 + 7_500_000) })
+		r.col.Cycle(ctx, t0.Add(30*time.Second))
+		if a := r.samples()["pi-a"][1]; !near(a.TrafficMbps, 2) {
+			t.Errorf("stale entry first %v: exit traffic = %v, want 2 Mbit/s", staleFirst, a.TrafficMbps)
+		}
+	}
+}

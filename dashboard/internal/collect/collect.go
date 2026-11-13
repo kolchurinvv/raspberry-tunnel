@@ -571,11 +571,7 @@ func (c *Collector) sample(ts time.Time, a answer, exitIP *netip.Addr) model.Sam
 	if cs := cpuStat(st); cs != nil {
 		cur.cpuBusy, cur.cpuTotal, cur.cpuKnown = cs[0], cs[1], true
 	}
-	for _, t := range st.Tunnel {
-		if t.Peer != nil && t.RxBytes != nil && t.TxBytes != nil {
-			cur.tunnelSum[*t.Peer] = *t.RxBytes + *t.TxBytes
-		}
-	}
+	cur.tunnelSum = tunnelCounters(a.peer.Role, st.Tunnel)
 	prev, hasPrev := c.counters[s.Host]
 	c.counters[s.Host] = cur
 	dt := ts.Sub(prev.ts).Seconds()
@@ -695,4 +691,34 @@ func freshIP(st *schema.Status, ts time.Time) *netip.Addr {
 	// An IPv4 address written as IPv6 is still the same address.
 	a := st.PublicIP.Value.Unmap()
 	return &a
+}
+
+// tunnelCounters sums each tunnel peer's bytes. On the exit, an entry for an
+// offline peer is skipped, and when a name repeats, as a re-flashed Pi's old
+// node does, the online entry wins, so a stale node's counters never stand in
+// for the live one's.
+func tunnelCounters(role model.Role, tunnels []schema.Tunnel) map[string]uint64 {
+	type pick struct {
+		sum    uint64
+		online bool
+	}
+	picks := map[string]pick{}
+	for _, t := range tunnels {
+		if t.Peer == nil || t.RxBytes == nil || t.TxBytes == nil {
+			continue
+		}
+		online := t.Online != nil && *t.Online
+		if role == model.RoleExit && t.Online != nil && !online {
+			continue
+		}
+		if prev, seen := picks[*t.Peer]; seen && (prev.online || !online) {
+			continue
+		}
+		picks[*t.Peer] = pick{*t.RxBytes + *t.TxBytes, online}
+	}
+	out := make(map[string]uint64, len(picks))
+	for peer, p := range picks {
+		out[peer] = p.sum
+	}
+	return out
 }
