@@ -119,19 +119,68 @@ The user deploys it. These are the pieces the cluster needs:
     first login.
   - If the node isn't tagged `tag:dashboard`, the program logs an error and the page says the dashboard isn't
     set up.
-- **Read-only RBAC for the node metrics.** Bind a ClusterRole like this one to the pod's service account. It
-  takes two reads, because the metrics API only reports usage, and the capacity comes from the node:
+- **Read-only RBAC for the node metrics.** The program reads the Headscale node from the Kubernetes API,
+  with the service-account token Kubernetes mounts into the pod. It takes two reads, because the metrics
+  API only reports usage, and the capacity comes from the node. The API refuses both by default, so it
+  needs four pieces:
+  - **a ServiceAccount** for the dashboard, its identity;
+  - **a ClusterRole** that may `get` that one node and its metrics. It has to be a ClusterRole, as nodes
+    don't belong to a namespace;
+  - **a ClusterRoleBinding** that gives the role to the ServiceAccount;
+  - **`serviceAccountName` in the Deployment's pod template.** Without it, the pod runs as its namespace's
+    `default` account, which the binding doesn't name. The API then answers 403, the log says `reading node
+    metrics` with `HTTP 403 from the API server`, and the Headscale card says "No data: the cluster's
+    metrics API isn't available."
 
   ```yaml
+  apiVersion: v1
+  kind: ServiceAccount
+  metadata:
+    name: dashboard
+    namespace: <namespace>
+  ---
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    name: dashboard-node-metrics
   rules:
-    - apiGroups: [""]
+    - apiGroups: [""]               # the node object: its capacity
       resources: ["nodes"]
       resourceNames: ["<node-name>"]
       verbs: ["get"]
-    - apiGroups: ["metrics.k8s.io"]
+    - apiGroups: ["metrics.k8s.io"] # metrics-server: its usage
       resources: ["nodes"]
       resourceNames: ["<node-name>"]
       verbs: ["get"]
+  ---
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRoleBinding
+  metadata:
+    name: dashboard-node-metrics
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: dashboard-node-metrics
+  subjects:
+    - kind: ServiceAccount
+      name: dashboard
+      namespace: <namespace>
+  ```
+
+  And in the Deployment:
+
+  ```yaml
+  spec:
+    template:
+      spec:
+        serviceAccountName: dashboard
+  ```
+
+  To check the grant before the pod starts, both of these should print `yes`:
+
+  ```sh
+  kubectl auth can-i get nodes/<node-name> --as=system:serviceaccount:<namespace>:dashboard
+  kubectl auth can-i get nodes.metrics.k8s.io/<node-name> --as=system:serviceaccount:<namespace>:dashboard
   ```
 - **The time zone:** set `DASH_TZ` to the site's zone, such as `Europe/Berlin`. The page shows every time in
   it, and the default is UTC.
