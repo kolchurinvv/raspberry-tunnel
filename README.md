@@ -26,16 +26,18 @@ moving wouldn't help. Pi B being off also takes TV B offline, as the TV has no
 other path. A Headscale server on a small VPS connects the Pis and can relay
 between them, but traffic never exits there.
 
+The tunnel's health is public and live at <https://rt.kolchurin.dev/>.
+
 ## Status
 
 | Piece | State |
 |---|---|
 | Pi A config (`hosts/pi-a.nix`, `modules/`) | Passes the VM test. Runs on a real Pi, has joined Headscale, and serves as Pi B's exit node. Updated on 2026-11-13: it serves the status endpoint, and its firewall also blocks the ranges in `private/extra-local-nets.nix` |
 | Pi B config (`hosts/pi-b.nix`, `modules/`) | Passes the VM test. Runs on a real Pi in apartment B, with TV B bridged onto the combo unit's network through its USB adapter. TV B's traffic goes through the tunnel, which reached Pi A over a direct path rather than a relay, and websites see apartment A's address. Apartment B's network hands out IPv6, and TV B gets none. Casting from a phone on apartment B's Wi-Fi works. Before moving, it was tried in apartment A on the default VLAN, where streaming, casting from an app and screen mirroring all worked, on Pi B's own connection and through the tunnel. Updated on 2026-11-13: it serves the status endpoint, and its firewall also blocks the ranges in `private/extra-local-nets.nix`. Its exit check sees the same public address as Pi A's |
-| Headscale policy (`headscale/policy.json`) | Passes the VM test |
+| Headscale policy (`headscale/policy.json`) | Passes the VM test. Loaded on the Headscale server on 2026-11-13, and the file hasn't changed since |
 | Headscale server | Runs as a second Headscale on an existing server, set up by hand. Its config isn't in this repository |
 | SD card images | Both built and flashed |
-| Public health dashboard (`docs/decisions/D2-public-dashboard-pulls-from-the-pis.md`) | Live since 2026-11-13. Both its parts run: the dashboard program, one Go binary (`docs/decisions/D3-dashboard-is-one-go-binary.md`) on the user's cluster, and the Pis' status endpoint, on both Pis. The next two rows give each one's state |
+| Public health dashboard (`docs/decisions/D2-public-dashboard-pulls-from-the-pis.md`) | Live since 2026-11-13 at <https://rt.kolchurin.dev/>. Both its parts run: the dashboard program, one Go binary (`docs/decisions/D3-dashboard-is-one-go-binary.md`) on the user's cluster, and the Pis' status endpoint, on both Pis. The next two rows give each one's state |
 | Dashboard program (`dashboard/`, D3) | Built: one Go binary, with its image (`.#dashboard-image`, amd64) and a check that runs its Go tests (`.#checks.x86_64-linux.dashboard`). The tests pass, including those that no address or private name reaches the page and that every route is `/` or under `/_dash/`. Dev mode runs it with fake Pis (`dashboard/README.md`). Deployed to the user's cluster on 2026-11-13, from manifests kept outside this repository: it joined the real Headscale with a pre-auth key, reads the cluster's node metrics through its own service account, and serves the public page, which the user confirmed working that evening |
 | Pis' status endpoint for the dashboard (`modules/status.nix`, D2) | Passes the VM test, which also logs what a request costs. Runs on both Pis since they were updated on 2026-11-13: each serves its status on the tailnet (see [Status endpoint](#status-endpoint)), and the Headscale policy lets the dashboard and your own devices read it |
 | Waking the workstation from the phone through Pi A | Not started, secondary to the tunnel |
