@@ -26,7 +26,8 @@ Pi B costs more because a gateway also sends one disco ping to its exit node and
 runs `ip` once, to read rule 5260.
 
 The dashboard asks each Pi every 30 seconds (D2), so 206 ms per request is
-about 0.7% of one core, or 0.17% of the Pi's four.
+about 0.7% of one core, or 0.17% of the Pi's four, counting only the endpoint's
+own processes (see the Decision).
 
 The options:
 
@@ -46,6 +47,16 @@ The options:
 - **It's measured as the VM test measures it:** the change in `usage_usec` in
   `/sys/fs/cgroup/system.slice/system-pi*status.slice/cpu.stat` across a run of
   requests, divided by their number.
+- **So the budget covers the endpoint's own processes,** the script and the
+  commands it runs, which are what the slice holds. Two other parts of a
+  request's cost fall outside it, and no measurement so far has counted them:
+  - systemd (PID 1) accepts each connection and starts a `pi-status@` instance
+    for it, counted in `init.scope`;
+  - tailscaled answers the script's local-API calls, `/localapi/v0/status` and
+    on a gateway the disco ping, counted in `tailscaled.service`.
+
+  A Pi's whole cost per request is therefore higher than the figures here, by
+  an amount not yet measured.
 - **The endpoint stays the script it is,** the agent's choice once the budget
   fits it. It isn't trimmed further for this, and isn't replaced by a compiled
   program.
@@ -56,6 +67,9 @@ The options:
   44 ms of room, little more than the 36 ms a gateway's extra work, with its
   disco ping and `ip`, adds over Pi A. So a change that adds a process to every
   request can use up most of it. Measure on a Pi after such a change.
+- A change that moves work into tailscaled, such as another local-API call,
+  shows in this measure only as the cost of the call's `nc`. Its main cost
+  lands in `tailscaled.service`, so read that counter too after such a change.
 - The budget is per request, so the load grows with how often the Pis are asked.
   The figures above are for D2's 30-second interval.
 - A Pi measured over 250 ms per request is over budget. The two options not
