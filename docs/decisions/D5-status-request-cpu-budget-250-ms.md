@@ -3,9 +3,11 @@
 - **Date:** 2026-11-13
 - **Status:** accepted; amends D2 (the status endpoint's CPU budget per request)
 - **Decided by:** the user, on 2026-11-13, after the first measurements on the
-  real Pis: "200 give or take irl is fine", and then 250 ms as the budget. They
-  took neither of the two other options below. How the cost is measured on a Pi
-  is the agent's, and is how the VM test already measures it.
+  real Pis: "200 give or take irl is fine". Asked to choose between 250 ms,
+  200 ms and no hard number, they chose 250 ms as the budget. The options below
+  weren't put to them. Listing them, keeping the endpoint the script it is, and
+  how the cost is measured on a Pi are the agent's. The measure is the one the
+  VM test already uses.
 
 ## Context
 
@@ -44,8 +46,9 @@ The options:
 - **It's measured as the VM test measures it:** the change in `usage_usec` in
   `/sys/fs/cgroup/system.slice/system-pi*status.slice/cpu.stat` across a run of
   requests, divided by their number.
-- **The endpoint stays the script it is.** It isn't trimmed further for this,
-  and isn't replaced by a compiled program.
+- **The endpoint stays the script it is,** the agent's choice once the budget
+  fits it. It isn't trimmed further for this, and isn't replaced by a compiled
+  program.
 
 ## Consequences
 
