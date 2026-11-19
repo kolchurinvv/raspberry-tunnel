@@ -98,8 +98,8 @@ docker load < result             # or: podman load < result
   - It logs in with `gh`'s token through a throwaway auth file, which it deletes afterwards.
   - A package's first push to ghcr.io is private. The cluster then pulls with its ghcr pull secret, unless
     the package is made public in GitHub's package settings.
-- **`checks.x86_64-linux.dashboard`** builds the same thing as `.#dashboard`. On the shared build machine, run
-  it under the box's lock, as `private/gate.md` describes for the VM test.
+- **`checks.x86_64-linux.dashboard`** builds the same thing as `.#dashboard`. On the shared build machine it
+  runs like the VM test: only once the user says yes, as the gate row in `AGENTS.md`'s Bindings says.
 - **`tailscale.com` in `go.mod` must equal nixpkgs' `tailscale` version**, which is what the Pis run. The
   build refuses otherwise.
   - So `tailscale.com` moves only after a `flake.lock` update.

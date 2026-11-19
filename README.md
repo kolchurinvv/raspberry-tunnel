@@ -60,7 +60,8 @@ or USB adapter, real speed, or real casting apps.
 
 The dashboard's Go tests, with `gofmt` and `go vet`, run in their own check:
 `nix build '.#checks.x86_64-linux.dashboard' -L --no-link`. On the shared build
-machine, run it under the box's lock, as `private/gate.md` describes for the VM test.
+machine it runs like the VM test: only once the user says yes, as the gate row in
+`AGENTS.md`'s Bindings says.
 
 ## First-time setup
 
